@@ -195,15 +195,15 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   private fun startListening() {
-    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).also {
-      it.setRecognitionListener(this)
-      it.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar")
-        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-      })
-    }
+    val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+    speechRecognizer = recognizer
+    recognizer.setRecognitionListener(SessionRecognitionListener(recognizer))
+    recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+      putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
+      putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar")
+      putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+      putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+    })
     actionButton.text = "Stop listening"
     status.text = "Listening…"
     feedback.text = ""
@@ -278,6 +278,24 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     stopListening()
     disposables.clear()
     super.onDestroy()
+  }
+
+  private inner class SessionRecognitionListener(
+    private val recognizer: SpeechRecognizer
+  ) : RecognitionListener {
+    private inline fun ifCurrent(block: () -> Unit) {
+      if (speechRecognizer === recognizer) block()
+    }
+
+    override fun onReadyForSpeech(params: Bundle?) = ifCurrent { this@RecitationPracticeActivity.onReadyForSpeech(params) }
+    override fun onBeginningOfSpeech() = ifCurrent { this@RecitationPracticeActivity.onBeginningOfSpeech() }
+    override fun onRmsChanged(rmsdB: Float) = ifCurrent { this@RecitationPracticeActivity.onRmsChanged(rmsdB) }
+    override fun onBufferReceived(buffer: ByteArray?) = ifCurrent { this@RecitationPracticeActivity.onBufferReceived(buffer) }
+    override fun onEndOfSpeech() = ifCurrent { this@RecitationPracticeActivity.onEndOfSpeech() }
+    override fun onError(error: Int) = ifCurrent { this@RecitationPracticeActivity.onError(error) }
+    override fun onResults(results: Bundle?) = ifCurrent { this@RecitationPracticeActivity.onResults(results) }
+    override fun onPartialResults(results: Bundle?) = ifCurrent { this@RecitationPracticeActivity.onPartialResults(results) }
+    override fun onEvent(eventType: Int, params: Bundle?) = ifCurrent { this@RecitationPracticeActivity.onEvent(eventType, params) }
   }
 
   companion object {
