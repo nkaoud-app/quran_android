@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -29,6 +31,7 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable
 /** First end-to-end test surface for recitation alignment. */
 class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private val alignmentEngine = RecitationAlignmentEngine()
+  private val mainHandler = Handler(Looper.getMainLooper())
   @Inject lateinit var arabicDatabaseUtils: ArabicDatabaseUtils
   @Inject lateinit var quranInfo: QuranInfo
 
@@ -36,6 +39,8 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private var currentAyah = 1
   private var expectedText = ""
   private var expectedWords = emptyList<ExpectedWord>()
+  private var autoStartNextAyah = false
+  private var matchAdvanceScheduled = false
   private val disposables = CompositeDisposable()
 
   private var speechRecognizer: SpeechRecognizer? = null
@@ -151,6 +156,12 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         transcript.text = ""
         previousButton.isEnabled = currentSura != 1 || currentAyah != 1
         nextButton.isEnabled = currentSura != 114 || currentAyah != quranInfo.getNumberOfAyahs(114)
+        if (autoStartNextAyah) {
+          autoStartNextAyah = false
+          mainHandler.postDelayed({
+            if (!isFinishing && speechRecognizer == null) startListening()
+          }, AUTO_START_DELAY_MS)
+        }
       }
     }, {
       runOnUiThread {
@@ -159,7 +170,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     }))
   }
 
-  private fun moveAyah(delta: Int) {
+  private fun moveAyah(delta: Int, startListeningWhenReady: Boolean = false) {
     if (speechRecognizer != null) stopListening()
     val next = when {
       delta < 0 && currentAyah > 1 -> SuraAyah(currentSura, currentAyah - 1)
@@ -170,6 +181,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     }
     currentSura = next.sura
     currentAyah = next.ayah
+    autoStartNextAyah = startListeningWhenReady
     loadAyah()
   }
 
@@ -221,9 +233,22 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
       result.missingWords.isNotEmpty() -> "Please repeat: " + result.missingWords.joinToString { it.text }
       result.unexpectedWords.isNotEmpty() -> "Unexpected/repeated word: " +
         result.unexpectedWords.joinToString { it.text }
-      result.matchedWords.size == expectedWords.size -> "Ayah matched."
+      result.matchedWords.size == expectedWords.size -> {
+        scheduleNextAyah()
+        "Ayah matched. Moving to the next ayah…"
+      }
       else -> "Keep going…"
     }
+  }
+
+  private fun scheduleNextAyah() {
+    if (matchAdvanceScheduled) return
+    matchAdvanceScheduled = true
+    stopListening()
+    mainHandler.postDelayed({
+      matchAdvanceScheduled = false
+      moveAyah(1, startListeningWhenReady = true)
+    }, NEXT_AYAH_DELAY_MS)
   }
 
   override fun onPartialResults(results: Bundle?) {
@@ -257,6 +282,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   override fun onDestroy() {
+    mainHandler.removeCallbacksAndMessages(null)
     stopListening()
     disposables.clear()
     super.onDestroy()
@@ -264,6 +290,8 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   companion object {
     private const val REQUEST_AUDIO = 1001
+    private const val NEXT_AYAH_DELAY_MS = 900L
+    private const val AUTO_START_DELAY_MS = 250L
     const val EXTRA_SURA = "extra_sura"
     const val EXTRA_AYAH = "extra_ayah"
   }
