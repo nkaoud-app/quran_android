@@ -15,29 +15,48 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.quran.data.core.QuranInfo
+import com.quran.data.model.SuraAyah
+import com.quran.labs.androidquran.QuranApplication
 import com.quran.labs.androidquran.R
+import com.quran.labs.androidquran.model.translation.ArabicDatabaseUtils
 import com.quran.recitation.common.ExpectedWord
 import com.quran.recitation.common.RecognizedWord
 import com.quran.recitation.common.RecitationAlignmentEngine
+import dev.zacsweers.metro.Inject
+import io.reactivex.rxjava3.disposables.CompositeDisposable
 
 /** First end-to-end test surface for recitation alignment. */
 class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private val alignmentEngine = RecitationAlignmentEngine()
-  private val expectedText = "الحمد لله رب العالمين"
-  private val expectedWords = expectedText.split(" ").mapIndexed { index, text ->
-    ExpectedWord(index, text)
-  }
+  @Inject lateinit var arabicDatabaseUtils: ArabicDatabaseUtils
+  @Inject lateinit var quranInfo: QuranInfo
+
+  private var currentSura = 1
+  private var currentAyah = 1
+  private var expectedText = ""
+  private var expectedWords = emptyList<ExpectedWord>()
+  private val disposables = CompositeDisposable()
 
   private var speechRecognizer: SpeechRecognizer? = null
   private lateinit var status: TextView
   private lateinit var transcript: TextView
   private lateinit var feedback: TextView
   private lateinit var actionButton: Button
+  private lateinit var reference: TextView
+  private lateinit var location: TextView
+  private lateinit var previousButton: Button
+  private lateinit var nextButton: Button
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    (application as QuranApplication).applicationComponent.inject(this)
+    currentSura = intent.getIntExtra(EXTRA_SURA, 1).coerceIn(1, 114)
+    currentAyah = intent.getIntExtra(EXTRA_AYAH, 1)
+      .coerceIn(1, quranInfo.getNumberOfAyahs(currentSura))
     title = getString(R.string.recitation_practice)
     setContentView(createContent())
+    loadAyah()
 
     if (!SpeechRecognizer.isRecognitionAvailable(this)) {
       actionButton.isEnabled = false
@@ -62,13 +81,35 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
       textSize = 16f
       setPadding(0, padding / 2, 0, padding / 2)
     })
-    content.addView(TextView(this).apply {
+    reference = TextView(this).apply {
       text = expectedText
       textSize = 28f
       gravity = Gravity.CENTER
       textDirection = TextView.TEXT_DIRECTION_RTL
       setPadding(0, padding, 0, padding)
-    })
+    }
+    content.addView(reference)
+
+    location = TextView(this).apply {
+      gravity = Gravity.CENTER
+      setPadding(0, 0, 0, padding / 2)
+    }
+    content.addView(location)
+
+    val navigation = LinearLayout(this).apply {
+      gravity = Gravity.CENTER
+    }
+    previousButton = Button(this).apply {
+      text = "Previous ayah"
+      setOnClickListener { moveAyah(-1) }
+    }
+    nextButton = Button(this).apply {
+      text = "Next ayah"
+      setOnClickListener { moveAyah(1) }
+    }
+    navigation.addView(previousButton)
+    navigation.addView(nextButton)
+    content.addView(navigation)
 
     actionButton = Button(this).apply {
       text = "Start listening"
@@ -83,6 +124,53 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     content.addView(feedback)
 
     return ScrollView(this).apply { addView(content) }
+  }
+
+  private fun loadAyah() {
+    status.text = "Loading ayah…"
+    val suraAyah = SuraAyah(currentSura, currentAyah)
+    disposables.add(arabicDatabaseUtils.getVerses(suraAyah, suraAyah).subscribe({ verses ->
+      val verse = verses.firstOrNull()
+      if (verse == null) {
+        runOnUiThread {
+          status.text = "Arabic Quran data is not available. Download it from Quran data settings."
+        }
+        return@subscribe
+      }
+      expectedText = ArabicDatabaseUtils.getAyahWithoutBasmallah(
+        currentSura, currentAyah, verse.text
+      ).trim()
+      expectedWords = expectedText.split(Regex("\\s+"))
+        .filter(String::isNotBlank)
+        .mapIndexed { index, text -> ExpectedWord(index, text) }
+      runOnUiThread {
+        reference.text = expectedText
+        location.text = "Surah $currentSura, ayah $currentAyah"
+        status.text = "Ready"
+        feedback.text = ""
+        transcript.text = ""
+        previousButton.isEnabled = currentSura != 1 || currentAyah != 1
+        nextButton.isEnabled = currentSura != 114 || currentAyah != quranInfo.getNumberOfAyahs(114)
+      }
+    }, {
+      runOnUiThread {
+        status.text = "Unable to load this ayah. Download the Arabic Quran data and try again."
+      }
+    }))
+  }
+
+  private fun moveAyah(delta: Int) {
+    if (speechRecognizer != null) stopListening()
+    val next = when {
+      delta < 0 && currentAyah > 1 -> SuraAyah(currentSura, currentAyah - 1)
+      delta < 0 && currentSura > 1 -> SuraAyah(currentSura - 1, quranInfo.getNumberOfAyahs(currentSura - 1))
+      delta > 0 && currentAyah < quranInfo.getNumberOfAyahs(currentSura) -> SuraAyah(currentSura, currentAyah + 1)
+      delta > 0 && currentSura < 114 -> SuraAyah(currentSura + 1, 1)
+      else -> return
+    }
+    currentSura = next.sura
+    currentAyah = next.ayah
+    loadAyah()
   }
 
   private fun toggleListening() {
@@ -170,10 +258,13 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   override fun onDestroy() {
     stopListening()
+    disposables.clear()
     super.onDestroy()
   }
 
   companion object {
     private const val REQUEST_AUDIO = 1001
+    const val EXTRA_SURA = "extra_sura"
+    const val EXTRA_AYAH = "extra_ayah"
   }
 }

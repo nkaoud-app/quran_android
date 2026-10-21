@@ -21,6 +21,7 @@ import com.quran.labs.androidquran.pageselect.PageSelectActivity
 import com.quran.labs.androidquran.service.AudioService
 import com.quran.labs.androidquran.service.QuranDownloadService
 import com.quran.labs.androidquran.ui.BookmarkListActivity
+import com.quran.labs.androidquran.ui.RecitationPracticeActivity
 import com.quran.labs.androidquran.ui.TranslationManagerActivity
 import com.quran.labs.androidquran.ui.fragment.AddTagDialog
 import com.quran.labs.androidquran.ui.fragment.BookmarksFragment
@@ -77,6 +78,7 @@ interface ApplicationComponent : QuranApplicationComponent {
   fun inject(pageSelectActivity: PageSelectActivity)
   fun inject(showJumpFragmentActivity: ShowJumpFragmentActivity)
   fun inject(bookmarkListActivity: BookmarkListActivity)
+  fun inject(recitationPracticeActivity: RecitationPracticeActivity)
 
   // fragments
   fun inject(bookmarksFragment: BookmarksFragment)
