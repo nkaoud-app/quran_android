@@ -206,8 +206,15 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
       putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
       putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar")
+        putExtra(
+          RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+          RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+        )
       putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
       putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1200L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
     })
     actionButton.text = "Stop listening"
     status.text = "Listening…"
@@ -261,7 +268,11 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   override fun onError(error: Int) {
     stopListening()
-    status.text = "Recognition error ($error). Tap Start and try again."
+    status.text = if (error == SpeechRecognizer.ERROR_NO_MATCH) {
+      "No speech recognized. Speak closer to the microphone and tap Start again."
+    } else {
+      "Recognition error ($error). Tap Start and try again."
+    }
   }
 
   override fun onReadyForSpeech(params: Bundle?) {}
