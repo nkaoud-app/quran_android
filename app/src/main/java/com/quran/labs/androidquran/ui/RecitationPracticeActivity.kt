@@ -212,9 +212,6 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         )
       putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
       putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1200L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
     })
     actionButton.text = "Stop listening"
     status.text = "Listening…"
@@ -229,7 +226,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     status.text = "Stopped"
   }
 
-  private fun updateAlignment(text: String) {
+  private fun updateAlignment(text: String, advanceWhenMatched: Boolean = false) {
     if (expectedWords.isEmpty()) return
     val recognized = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
       .map { RecognizedWord(it) }
@@ -242,8 +239,12 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
       result.unexpectedWords.isNotEmpty() -> "Unexpected/repeated word: " +
         result.unexpectedWords.joinToString { it.text }
       result.matchedWords.size == expectedWords.size -> {
-        scheduleNextAyah()
-        "Ayah matched. Moving to the next ayah…"
+        if (advanceWhenMatched) {
+          scheduleNextAyah()
+          "Ayah matched. Moving to the next ayah…"
+        } else {
+          "Ayah matched. Finishing…"
+        }
       }
       else -> "Keep going…"
     }
@@ -258,12 +259,14 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   override fun onPartialResults(results: Bundle?) {
-    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let(::updateAlignment)
+    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+      ?.firstOrNull()?.let { updateAlignment(it, advanceWhenMatched = false) }
   }
 
   override fun onResults(results: Bundle?) {
-    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let(::updateAlignment)
-    stopListening()
+    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+      ?.firstOrNull()?.let { updateAlignment(it, advanceWhenMatched = true) }
+    if (speechRecognizer != null) stopListening()
   }
 
   override fun onError(error: Int) {
