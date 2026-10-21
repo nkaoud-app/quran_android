@@ -115,6 +115,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
     actionButton = Button(this).apply {
       text = "Start listening"
+      isEnabled = false
       setOnClickListener { toggleListening() }
     }
     content.addView(actionButton)
@@ -130,12 +131,14 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   private fun loadAyah() {
     status.text = "Loading ayah…"
+    actionButton.isEnabled = false
     val suraAyah = SuraAyah(currentSura, currentAyah)
     disposables.add(arabicDatabaseUtils.getVerses(suraAyah, suraAyah).subscribe({ verses ->
       val verse = verses.firstOrNull()
       if (verse == null) {
         runOnUiThread {
           status.text = "Arabic Quran data is not available. Download it from Quran data settings."
+          actionButton.isEnabled = false
         }
         return@subscribe
       }
@@ -149,6 +152,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         reference.text = expectedText
         location.text = "Surah $currentSura, ayah $currentAyah"
         status.text = "Ready"
+        actionButton.isEnabled = true
         feedback.text = ""
         transcript.text = ""
         previousButton.isEnabled = currentSura != 1 || currentAyah != 1
@@ -161,6 +165,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     }, {
       runOnUiThread {
         status.text = "Unable to load this ayah. Download the Arabic Quran data and try again."
+        actionButton.isEnabled = false
       }
     }))
   }
@@ -218,6 +223,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   private fun updateAlignment(text: String) {
+    if (expectedWords.isEmpty()) return
     val recognized = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
       .map { RecognizedWord(it) }
     val result = alignmentEngine.align(expectedWords, recognized)
@@ -254,8 +260,8 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   override fun onError(error: Int) {
-    status.text = "Recognition error ($error). Tap Start and try again."
     stopListening()
+    status.text = "Recognition error ($error). Tap Start and try again."
   }
 
   override fun onReadyForSpeech(params: Bundle?) {}
