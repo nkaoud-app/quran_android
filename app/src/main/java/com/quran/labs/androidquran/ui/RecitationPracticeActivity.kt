@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -31,7 +29,6 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable
 /** First end-to-end test surface for recitation alignment. */
 class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private val alignmentEngine = RecitationAlignmentEngine()
-  private val mainHandler = Handler(Looper.getMainLooper())
   @Inject lateinit var arabicDatabaseUtils: ArabicDatabaseUtils
   @Inject lateinit var quranInfo: QuranInfo
 
@@ -158,9 +155,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         nextButton.isEnabled = currentSura != 114 || currentAyah != quranInfo.getNumberOfAyahs(114)
         if (autoStartNextAyah) {
           autoStartNextAyah = false
-          mainHandler.postDelayed({
-            if (!isFinishing && speechRecognizer == null) startListening()
-          }, AUTO_START_DELAY_MS)
+          if (!isFinishing && speechRecognizer == null) startListening()
         }
       }
     }, {
@@ -245,10 +240,8 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
     if (matchAdvanceScheduled) return
     matchAdvanceScheduled = true
     stopListening()
-    mainHandler.postDelayed({
-      matchAdvanceScheduled = false
-      moveAyah(1, startListeningWhenReady = true)
-    }, NEXT_AYAH_DELAY_MS)
+    matchAdvanceScheduled = false
+    moveAyah(1, startListeningWhenReady = true)
   }
 
   override fun onPartialResults(results: Bundle?) {
@@ -282,7 +275,6 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   override fun onDestroy() {
-    mainHandler.removeCallbacksAndMessages(null)
     stopListening()
     disposables.clear()
     super.onDestroy()
@@ -290,8 +282,6 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   companion object {
     private const val REQUEST_AUDIO = 1001
-    private const val NEXT_AYAH_DELAY_MS = 900L
-    private const val AUTO_START_DELAY_MS = 250L
     const val EXTRA_SURA = "extra_sura"
     const val EXTRA_AYAH = "extra_ayah"
   }
