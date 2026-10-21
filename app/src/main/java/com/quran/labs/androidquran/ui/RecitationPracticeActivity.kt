@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.quran.data.core.QuranInfo
@@ -49,6 +50,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private lateinit var location: TextView
   private lateinit var previousButton: Button
   private lateinit var nextButton: Button
+  private lateinit var autoTrackingSwitch: SwitchCompat
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -91,6 +93,14 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
       setPadding(0, padding, 0, padding)
     }
     content.addView(reference)
+
+    autoTrackingSwitch = SwitchCompat(this).apply {
+      text = "Auto tracking"
+      isChecked = false
+      contentDescription = "Automatically advance after a matched ayah"
+      setPadding(0, padding / 2, 0, padding / 2)
+    }
+    content.addView(autoTrackingSwitch)
 
     location = TextView(this).apply {
       gravity = Gravity.CENTER
@@ -265,7 +275,9 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   override fun onResults(results: Bundle?) {
     results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-      ?.firstOrNull()?.let { updateAlignment(it, advanceWhenMatched = true) }
+      ?.firstOrNull()?.let {
+        updateAlignment(it, advanceWhenMatched = autoTrackingSwitch.isChecked)
+      }
     if (speechRecognizer != null) stopListening()
   }
 
