@@ -73,10 +73,10 @@ def reference_word_ends(path, audio, words, sura, first_ayah):
   return result
 
 
-def track(model, audio, words, sura, first_ayah, streaming):
+def track(model, audio, words, sura, first_ayah, streaming, config=TrackerConfig()):
   scores = SkeletonScores(model.vocab, model.blank_id)
   frame_scores = scores(model.streaming_log_probs(audio, streaming))
-  tracker = RecitationTracker([w.text for w in words], scores, TrackerConfig(),
+  tracker = RecitationTracker([w.text for w in words], scores, config,
                               optional_phrases=opening_phrases(sura, first_ayah))
   frames_per_hop = round(streaming.hop_seconds / FRAME_SECONDS)
   detected = [None] * len(words)
@@ -100,6 +100,7 @@ def main():
   parser.add_argument("--hop", type=float, default=0.5)
   parser.add_argument("--context", type=float, default=6.0)
   parser.add_argument("--lookahead", type=float, default=1.0)
+  parser.add_argument("--skip-letter-penalty", type=float, default=TrackerConfig.skip_letter_penalty)
   args = parser.parse_args()
 
   torch.set_num_threads(4)
@@ -108,11 +109,12 @@ def main():
   ayah_ends = [k for k, w in enumerate(words) if k + 1 == len(words) or words[k + 1].ayah != w.ayah]
   streaming = StreamingConfig(args.hop, args.context, args.lookahead)
   model = AcousticModel(args.model)
-  print(f"model={args.model} {streaming}")
+  print(f"model={args.model} {streaming} skip_letter_penalty={args.skip_letter_penalty}")
   for path in args.recordings:
     audio = load_audio(path)
     reference = reference_word_ends(path, audio, words, args.sura, first)
-    detected = track(model, audio, words, args.sura, first, streaming)
+    config = TrackerConfig(skip_letter_penalty=args.skip_letter_penalty)
+    detected = track(model, audio, words, args.sura, first, streaming, config)
     lags = np.array([d - r for d, r in zip(detected, reference) if d is not None])
     ayah_lags = np.array([detected[k] - reference[k] for k in ayah_ends if detected[k] is not None])
     print(f"  {path.rsplit('/', 1)[-1][:28]:<28} missed {sum(d is None for d in detected)} "

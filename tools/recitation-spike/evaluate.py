@@ -67,13 +67,15 @@ def main():
   parser.add_argument("--lookahead", type=float, default=1.0)
   parser.add_argument("--filler-penalty", type=float, default=1.5)
   parser.add_argument("--stable-frames", type=int, default=5)
+  parser.add_argument("--skip-letter-penalty", type=float, default=TrackerConfig.skip_letter_penalty)
   parser.add_argument("--verbose", action="store_true")
   args = parser.parse_args()
 
   torch.set_num_threads(4)
   model = AcousticModel(args.model)
   streaming = StreamingConfig(args.hop, args.context, args.lookahead)
-  tracker_config = TrackerConfig(args.filler_penalty, args.stable_frames)
+  tracker_config = TrackerConfig(args.filler_penalty, args.stable_frames,
+                                 skip_letter_penalty=args.skip_letter_penalty)
   print(f"model={args.model} {streaming} {tracker_config}")
   for sura in args.suras:
     r = evaluate_sura(model, sura, streaming, tracker_config, args.verbose)

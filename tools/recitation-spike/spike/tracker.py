@@ -66,6 +66,9 @@ class TrackerConfig:
   stable_frames: int = 5
   # Cost of jumping back to the start of an earlier word, e.g. when the reader repeats a phrase.
   jump_back_penalty: float = 10.0
+  # Cost of a letter the model never heard (weak letters such as a long ي are easy to miss), so
+  # one missed letter does not hold the tracker back.
+  skip_letter_penalty: float = 4.0
 
 
 ISTIADHA = "أَعُوذُ بِٱللَّهِ مِنَ ٱلشَّيۡطَٰنِ ٱلرَّجِيمِ".split()
@@ -156,6 +159,11 @@ class RecitationTracker:
     skip = np.full(self.n_states, -np.inf)
     skip[2:] = prev[:-2]
     best = np.where(self.can_skip, np.maximum(best, skip), best)
+    # Skip one letter: from the previous letter (j - 4) or the blank before the skipped one (j - 3).
+    skip_letter = np.full(self.n_states, -np.inf)
+    skip_letter[4:] = np.maximum(prev[:-4], prev[1:-3])
+    skip_letter -= self.config.skip_letter_penalty
+    best[5::2] = np.maximum(best[5::2], skip_letter[5::2])
     for source, target in self.jumps:
       best[target] = max(best[target], prev[source])
     for entry in self.entries:

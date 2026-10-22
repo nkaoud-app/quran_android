@@ -151,7 +151,11 @@ def train(args):
     n = min(logits.shape[1], window_frames)
     log_probs = F.log_softmax(logits[:, :n].float(), dim=-1)
     target = torch.tensor(np.stack(targets)[:, :n], device=DEVICE)
-    loss = F.kl_div(log_probs, target, log_target=True, reduction="none").sum(-1).mean()
+    # Most frames are blank; weight frames by how sure the teacher is that a letter is there, so
+    # the student does not learn to drop weak letters such as a long ي.
+    weights = 1 + args.letter_weight * (1 - target[..., 0].exp())
+    per_frame = F.kl_div(log_probs, target, log_target=True, reduction="none").sum(-1)
+    loss = (per_frame * weights).sum() / weights.sum()
     optimizer.zero_grad()
     scaler.scale(loss).backward()
     scaler.unscale_(optimizer)
@@ -181,6 +185,8 @@ def main():
   t.add_argument("--window", type=float, default=4.0, help="seconds; context + hop + look-ahead")
   t.add_argument("--lr", type=float, default=5e-5)
   t.add_argument("--log-every", type=int, default=20)
+  t.add_argument("--letter-weight", type=float, default=4.0,
+                 help="extra loss weight for frames where the teacher hears a letter")
   t.add_argument("--speed", type=float, nargs=2, default=[0.8, 1.4],
                  help="range of playback rates; above 1 simulates faster recitation")
   args = parser.parse_args()
