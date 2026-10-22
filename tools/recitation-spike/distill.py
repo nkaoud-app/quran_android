@@ -89,6 +89,23 @@ def augment(audio: np.ndarray, rng: random.Random) -> np.ndarray:
   return audio
 
 
+def change_speed(audio: np.ndarray, labels: np.ndarray, rate: float, frames: int):
+  """Plays `audio` `rate` times faster (pitch shifts too) and stretches its frame labels to match.
+
+  `audio` and `labels` start at the same frame and cover at least `frames * rate` frames; returns
+  `frames` frames of both. Label probabilities are averaged over the source frames each output
+  frame covers, so short letters survive when speeding up.
+  """
+  samples = frames * HOP + HOP
+  source = np.arange(samples) * rate
+  audio = np.interp(source, np.arange(len(audio)), audio).astype(np.float32)
+  edges = np.floor(np.arange(frames + 1) * rate).astype(int)
+  lo, hi = edges[:-1], np.maximum(edges[1:], edges[:-1] + 1)
+  cumulative = np.vstack([np.zeros((1, labels.shape[1])), np.cumsum(np.exp(labels), axis=0)])
+  probs = (cumulative[hi] - cumulative[lo]) / (hi - lo)[:, None]
+  return audio, np.log(probs + 1e-9).astype(np.float32)
+
+
 def train(args):
   torch.set_num_threads(4)
   classes = json.loads((LABELS / "classes.json").read_text())
@@ -119,13 +136,16 @@ def train(args):
     batch, targets = [], []
     for _ in range(args.batch):
       key = rng.choice(keys)
-      n_frames = min(len(labels[key]), len(audio[key]) // HOP) - window_frames - 1
+      rate = rng.uniform(*args.speed)  # > 1 recites faster than the reciter did
+      span = int(np.ceil(window_frames * rate)) + 2
+      n_frames = min(len(labels[key]), len(audio[key]) // HOP) - span
       first = rng.randrange(max(1, n_frames))
-      chunk = audio[key][first * HOP:(first + window_frames) * HOP + HOP]
+      chunk, target = change_speed(audio[key][first * HOP:(first + span) * HOP],
+                                   labels[key][first:first + span], rate, window_frames)
       chunk = augment(chunk, rng)
       chunk = (chunk - chunk.mean()) / (chunk.std() + 1e-7)  # what the feature extractor does
       batch.append(chunk)
-      targets.append(labels[key][first:first + window_frames])
+      targets.append(target)
     with torch.autocast("cuda", dtype=torch.float16, enabled=DEVICE == "cuda"):
       logits = model(torch.tensor(np.stack(batch), device=DEVICE)).logits
     n = min(logits.shape[1], window_frames)
@@ -161,6 +181,8 @@ def main():
   t.add_argument("--window", type=float, default=4.0, help="seconds; context + hop + look-ahead")
   t.add_argument("--lr", type=float, default=5e-5)
   t.add_argument("--log-every", type=int, default=20)
+  t.add_argument("--speed", type=float, nargs=2, default=[0.8, 1.4],
+                 help="range of playback rates; above 1 simulates faster recitation")
   args = parser.parse_args()
   {"label": label, "train": train}[args.command](args)
 
