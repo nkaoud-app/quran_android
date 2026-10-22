@@ -57,6 +57,8 @@ class AcousticModel:
       log_probs = self._log_probs(audio[max(0, start - context):window_end])
       future_frames = round((window_end - end) / SAMPLE_RATE / FRAME_SECONDS)
       new_frames = round((end - start) / SAMPLE_RATE / FRAME_SECONDS)
+      if new_frames == 0:
+        continue  # a few trailing samples; [-0:] below would repeat the whole window
       kept = log_probs[: log_probs.shape[0] - future_frames] if future_frames else log_probs
       chunks.append(kept[-new_frames:])
     result = np.concatenate(chunks)
