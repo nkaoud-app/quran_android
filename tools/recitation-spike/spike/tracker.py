@@ -64,6 +64,8 @@ class TrackerConfig:
   filler_penalty: float = 1.5
   # Frames the best path must stay past a word before it counts as recited (20 ms per frame).
   stable_frames: int = 5
+  # Cost of jumping back to the start of an earlier word, e.g. when the reader repeats a phrase.
+  jump_back_penalty: float = 10.0
 
 
 ISTIADHA = "أَعُوذُ بِٱللَّهِ مِنَ ٱلشَّيۡطَٰنِ ٱلرَّجِيمِ".split()
@@ -82,6 +84,8 @@ class RecitationTracker:
   """Follows a reader through `words` one frame at a time.
 
   `optional_phrases` (e.g. ta'awwudh and basmala) may each be recited or skipped before the text.
+  The reader may also go back to any earlier word and recite from there again. `completed` is the
+  furthest the reader got, `current_word` where they are now.
   """
 
   def __init__(
@@ -116,6 +120,12 @@ class RecitationTracker:
     self.emission_class = np.zeros(self.n_states, dtype=int)
     self.emission_class[1::2] = tokens
     self.last_state_of_word = np.array(last_state_of_word)
+    # Where reciting a word starts: the blank before its first letter, and that letter.
+    starts = [text_start] + last_state_of_word[:-1]
+    self.word_starts = np.array(
+      [state for start, end in zip(starts, last_state_of_word) if end > start
+       for state in (start, start + 1)]
+    )
     # A token state may skip the preceding blank unless it repeats the previous token.
     self.can_skip = np.zeros(self.n_states, dtype=bool)
     for j in range(3, self.n_states, 2):
@@ -134,6 +144,7 @@ class RecitationTracker:
     self.filler = 0.0
     self.frames = 0
     self.completed = 0  # number of words recited so far
+    self.current_word = 0
     self._stable = 0
 
   def push(self, frame_scores: np.ndarray) -> int:
@@ -149,6 +160,13 @@ class RecitationTracker:
       best[target] = max(best[target], prev[source])
     for entry in self.entries:
       best[entry] = max(best[entry], self.filler)
+    if len(self.word_starts):
+      # Best score of any later state, for jumping back to an earlier word's start.
+      later = np.maximum.accumulate(prev[::-1])[::-1]
+      from_later = np.full(len(self.word_starts), -np.inf)
+      inside = self.word_starts + 2 < self.n_states
+      from_later[inside] = later[self.word_starts[inside] + 2] - self.config.jump_back_penalty
+      best[self.word_starts] = np.maximum(best[self.word_starts], from_later)
     self.delta = best + emit
     self.filler += frame_scores.max() - self.config.filler_penalty
     self.frames += 1
@@ -156,6 +174,7 @@ class RecitationTracker:
     position = int(np.argmax(self.delta))
     if self.filler > self.delta[position] or position < self.text_start:
       return self.completed  # still before the text
+    self.current_word = int(np.searchsorted(self.last_state_of_word, position, side="right"))
     target = self.completed
     while target < len(self.last_state_of_word) and position >= self.last_state_of_word[target]:
       target += 1
