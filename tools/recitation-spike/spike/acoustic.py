@@ -1,5 +1,6 @@
 """Runs a CTC acoustic model over audio the way a phone would: in small chunks, no look-ahead."""
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,18 +21,35 @@ class StreamingConfig:
 
 
 class AcousticModel:
+  """A Hugging Face CTC model, or a distilled student directory (with classes.json)."""
+
   def __init__(self, model_id: str):
     self.model_id = model_id
-    self.processor = AutoProcessor.from_pretrained(model_id)
     self.model = Wav2Vec2ForCTC.from_pretrained(model_id).eval()
-    self.vocab = self.processor.tokenizer.get_vocab()
-    self.blank_id = self.processor.tokenizer.pad_token_id
+    classes = Path(model_id) / "classes.json"
+    if classes.exists():  # student: outputs skeleton classes directly
+      letters = json.loads(classes.read_text())["letters"]
+      self.vocab = {"<blank>": 0} | {letter: i + 1 for i, letter in enumerate(letters)}
+      self.blank_id = 0
+      self.processor = None
+    else:
+      self.processor = AutoProcessor.from_pretrained(model_id)
+      self.vocab = self.processor.tokenizer.get_vocab()
+      self.blank_id = self.processor.tokenizer.pad_token_id
 
   @torch.no_grad()
   def _log_probs(self, audio: np.ndarray) -> np.ndarray:
-    inputs = self.processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    logits = self.model(inputs.input_values).logits[0]
+    if self.processor:
+      inputs = self.processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt").input_values
+    else:
+      inputs = torch.tensor((audio - audio.mean()) / (audio.std() + 1e-7))[None]
+    logits = self.model(inputs).logits[0]
     return torch.log_softmax(logits.float(), dim=-1).numpy()
+
+  def _version(self) -> str:
+    """Changes when a local (student) checkpoint is retrained, so cached outputs are not reused."""
+    weights = Path(self.model_id) / "model.safetensors"
+    return str(weights.stat().st_mtime) if weights.exists() else ""
 
   def streaming_log_probs(self, audio: np.ndarray, config: StreamingConfig) -> np.ndarray:
     """Frame log-probabilities, each computed only from audio up to the end of its hop.
@@ -41,7 +59,7 @@ class AcousticModel:
     Results are cached on disk since this is the slow part of an evaluation.
     """
     key = hashlib.sha1(
-      f"{self.model_id}|{config}|{len(audio)}|{audio[::997].tobytes().hex()}".encode()
+      f"{self.model_id}|{self._version()}|{config}|{len(audio)}|{audio[::997].tobytes().hex()}".encode()
     ).hexdigest()[:16]
     cache = Path(DATA) / "cache" / f"{key}.npy"
     if cache.exists():

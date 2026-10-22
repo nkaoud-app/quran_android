@@ -17,10 +17,17 @@ DATA = Path(os.environ.get("SPIKE_DATA", "data"))
 DATABASES_URL = "https://android.quran.com/data/databases/"
 SAMPLE_RATE = 16000
 
-# Reciters with gapless audio and word-level timings (timings "words" column).
+QURANICAUDIO_URL = "https://download.quranicaudio.com/quran/"
+# Reciters with gapless audio and word-level timings (timings "words" column), used to evaluate.
 RECITERS = {
-  "minshawi_murattal": "https://download.quranicaudio.com/quran/muhammad_siddeeq_al-minshaawee/",
+  "minshawi_murattal": QURANICAUDIO_URL + "muhammad_siddeeq_al-minshaawee/",
 }
+# Further gapless reciters (no word timings), used as distillation training audio.
+TRAINING_RECITERS = [
+  "mishaari_raashid_al_3afaasee", "abdul_basit_murattal", "mahmood_khaleel_al-husaree",
+  "sa3d_al-ghaamidi/complete", "abdurrahmaan_as-sudays", "maher_almu3aiqly/year1440",
+  "muhammad_ayyoob", "ahmed_ibn_3ali_al-3ajamy",
+]
 
 
 @dataclass
@@ -79,11 +86,12 @@ def sura_words(sura: int, reciter: str = "minshawi_murattal") -> list[Word]:
 
 def sura_audio(sura: int, reciter: str = "minshawi_murattal") -> np.ndarray:
   """Mono 16 kHz float32 audio of a whole sura."""
-  mp3 = _download(f"{RECITERS[reciter]}{sura:03d}.mp3", DATA / "audio" / reciter / f"{sura:03d}.mp3")
+  base = RECITERS.get(reciter) or QURANICAUDIO_URL + reciter + "/"
+  mp3 = _download(f"{base}{sura:03d}.mp3", DATA / "audio" / reciter.replace("/", "_") / f"{sura:03d}.mp3")
   wav = mp3.with_suffix(".f32")
   if not wav.exists():
     subprocess.run(
-      ["ffmpeg", "-v", "error", "-y", "-i", str(mp3), "-ac", "1", "-ar", str(SAMPLE_RATE),
+      ["ffmpeg", "-v", "error", "-y", "-i", str(mp3), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
        "-f", "f32le", str(wav)],
       check=True,
     )
