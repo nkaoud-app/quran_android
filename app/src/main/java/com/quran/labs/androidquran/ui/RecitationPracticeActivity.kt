@@ -24,8 +24,9 @@ import com.quran.labs.androidquran.QuranApplication
 import com.quran.labs.androidquran.R
 import com.quran.labs.androidquran.model.translation.ArabicDatabaseUtils
 import com.quran.recitation.common.ExpectedWord
-import com.quran.recitation.common.RecognizedWord
 import com.quran.recitation.common.RecitationAlignmentEngine
+import com.quran.recitation.common.expectedWordsOf
+import com.quran.recitation.common.recognizedWordsOf
 import dev.zacsweers.metro.Inject
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
@@ -174,9 +175,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         expectedText = ArabicDatabaseUtils.getAyahWithoutBasmallah(
           currentSura, currentAyah, verse.text
         ).trim()
-        expectedWords = expectedText.split(Regex("\\s+"))
-          .filter(String::isNotBlank)
-          .mapIndexed { index, text -> ExpectedWord(index, text) }
+        expectedWords = expectedWordsOf(expectedText)
         reference.text = expectedText
         location.text = "Surah $currentSura, ayah $currentAyah"
         status.text = "Ready"
@@ -288,28 +287,28 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   /** Returns true when the ayah was matched and auto tracking moved to the next one. */
   private fun updateAlignment(text: String): Boolean {
     if (expectedWords.isEmpty()) return false
-    val recognized = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
-      .map { RecognizedWord(it) }
-    val result = alignmentEngine.align(expectedWords, recognized)
+    val result = alignmentEngine.align(expectedWords, recognizedWordsOf(text))
     transcript.text = "Recognized: $text"
+    val progress = "(${result.matchedWords.size}/${expectedWords.size} words matched)"
 
-    // Every expected word was heard; repeated words (e.g. when resuming after a pause) are fine.
-    if (autoTracking && result.matchedWords.size == expectedWords.size) {
+    // The last word was reached and (nearly) every word heard; repeated words are fine.
+    if (autoTracking && result.isComplete) {
       feedback.text = "Ayah matched. Moving to the next ayah…"
       heardText = ""
       moveAyah(1, keepListening = true)
       return true
     }
 
-    feedback.text = when {
+    val message = when {
+      result.isComplete -> "Ayah matched."
       result.substitutions.isNotEmpty() -> "Possible word difference: " +
         result.substitutions.joinToString { "${it.expected.text} → ${it.recognized.text}" }
       result.missingWords.isNotEmpty() -> "Please repeat: " + result.missingWords.joinToString { it.text }
       result.unexpectedWords.isNotEmpty() -> "Unexpected/repeated word: " +
         result.unexpectedWords.joinToString { it.text }
-      result.matchedWords.size == expectedWords.size -> "Ayah matched."
       else -> "Keep going…"
     }
+    feedback.text = "$message\n$progress"
     return false
   }
 
