@@ -19,7 +19,7 @@ import torch
 import torch.nn.functional as F
 from transformers import Wav2Vec2ForCTC
 
-from spike.acoustic import AcousticModel
+from spike.acoustic import DEVICE, AcousticModel
 from spike.data import DATA, SAMPLE_RATE, TRAINING_RECITERS, sura_audio
 from spike.tracker import SkeletonScores
 
@@ -103,12 +103,13 @@ def train(args):
   total = sum(len(a) for a in audio.values()) / SAMPLE_RATE / 3600
   print(f"{len(items)} recordings, {total:.1f} h of audio", flush=True)
 
-  model = student_model(n_classes, args.layers)
+  model = student_model(n_classes, args.layers).to(DEVICE)
   model.freeze_feature_encoder()
   model.train()
   optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr)
   schedule = torch.optim.lr_scheduler.OneCycleLR(optimizer, args.lr, total_steps=args.steps,
                                                  pct_start=0.1)
+  scaler = torch.amp.GradScaler(enabled=DEVICE == "cuda")
   rng = random.Random(0)
   window_frames = round(args.window * SAMPLE_RATE / HOP)
   keys = list(audio)
@@ -125,15 +126,18 @@ def train(args):
       chunk = (chunk - chunk.mean()) / (chunk.std() + 1e-7)  # what the feature extractor does
       batch.append(chunk)
       targets.append(labels[key][first:first + window_frames])
-    logits = model(torch.tensor(np.stack(batch))).logits
+    with torch.autocast("cuda", dtype=torch.float16, enabled=DEVICE == "cuda"):
+      logits = model(torch.tensor(np.stack(batch), device=DEVICE)).logits
     n = min(logits.shape[1], window_frames)
-    log_probs = F.log_softmax(logits[:, :n], dim=-1)
-    target = torch.tensor(np.stack(targets)[:, :n])
+    log_probs = F.log_softmax(logits[:, :n].float(), dim=-1)
+    target = torch.tensor(np.stack(targets)[:, :n], device=DEVICE)
     loss = F.kl_div(log_probs, target, log_target=True, reduction="none").sum(-1).mean()
     optimizer.zero_grad()
-    loss.backward()
+    scaler.scale(loss).backward()
+    scaler.unscale_(optimizer)
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
+    scaler.step(optimizer)
+    scaler.update()
     schedule.step()
     if step % args.log_every == 0:
       letters = target.argmax(-1) != 0  # frames where the teacher hears a letter, not blank

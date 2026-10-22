@@ -11,6 +11,7 @@ from transformers import AutoProcessor, Wav2Vec2ForCTC
 from .data import DATA, SAMPLE_RATE
 
 FRAME_SECONDS = 0.02  # wav2vec2 emits one frame per 20 ms
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 @dataclass
@@ -25,7 +26,7 @@ class AcousticModel:
 
   def __init__(self, model_id: str):
     self.model_id = model_id
-    self.model = Wav2Vec2ForCTC.from_pretrained(model_id).eval()
+    self.model = Wav2Vec2ForCTC.from_pretrained(model_id).float().eval().to(DEVICE)
     classes = Path(model_id) / "classes.json"
     if classes.exists():  # student: outputs skeleton classes directly
       letters = json.loads(classes.read_text())["letters"]
@@ -43,8 +44,9 @@ class AcousticModel:
       inputs = self.processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt").input_values
     else:
       inputs = torch.tensor((audio - audio.mean()) / (audio.std() + 1e-7))[None]
-    logits = self.model(inputs).logits[0]
-    return torch.log_softmax(logits.float(), dim=-1).numpy()
+    with torch.autocast("cuda", dtype=torch.float16, enabled=DEVICE == "cuda"):
+      logits = self.model(inputs.to(DEVICE)).logits[0]
+    return torch.log_softmax(logits.float(), dim=-1).cpu().numpy()
 
   def _version(self) -> str:
     """Changes when a local (student) checkpoint is retrained, so cached outputs are not reused."""
