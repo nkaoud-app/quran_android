@@ -68,7 +68,7 @@ class TrackerConfig:
   jump_back_penalty: float = 10.0
   # Cost of a letter the model never heard (weak letters such as a long ي are easy to miss), so
   # one missed letter does not hold the tracker back.
-  skip_letter_penalty: float = 4.0
+  skip_letter_penalty: float = 1.0
 
 
 ISTIADHA = "أَعُوذُ بِٱللَّهِ مِنَ ٱلشَّيۡطَٰنِ ٱلرَّجِيمِ".split()
