@@ -135,9 +135,10 @@ def train(args):
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     schedule.step()
-    if step % 20 == 0:
-      agree = (log_probs.argmax(-1) == target.argmax(-1)).float().mean().item()
-      print(f"step {step} loss {loss.item():.3f} argmax agreement {agree:.3f} "
+    if step % args.log_every == 0:
+      letters = target.argmax(-1) != 0  # frames where the teacher hears a letter, not blank
+      agree = (log_probs.argmax(-1) == target.argmax(-1))[letters].float().mean().item()
+      print(f"step {step} loss {loss.item():.3f} letter agreement {agree:.3f} "
             f"{(time.time() - started) / step:.1f}s/step", flush=True)
     if step % 500 == 0 or step == args.steps:
       model.save_pretrained(out)
@@ -155,6 +156,7 @@ def main():
   t.add_argument("--batch", type=int, default=8)
   t.add_argument("--window", type=float, default=4.0, help="seconds; context + hop + look-ahead")
   t.add_argument("--lr", type=float, default=5e-5)
+  t.add_argument("--log-every", type=int, default=20)
   args = parser.parse_args()
   {"label": label, "train": train}[args.command](args)
 
