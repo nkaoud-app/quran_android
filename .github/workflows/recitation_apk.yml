@@ -27,14 +27,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run recitation tests
-        run: ./gradlew :common:recitation:testDebugUnitTest
+        run: ./gradlew :common:recitation:testReleaseUnitTest
 
       - name: Upload test report
         uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: recitation_test_report
-          path: common/recitation/build/reports/tests/testDebugUnitTest/
+          path: common/recitation/build/reports/tests/testReleaseUnitTest/
           retention-days: 3
 
       - name: Build debug APK
