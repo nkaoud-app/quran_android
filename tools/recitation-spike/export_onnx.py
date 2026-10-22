@@ -52,7 +52,9 @@ def main():
     dynamic_axes={"audio": {1: "samples"}, "logits": {1: "frames"}}, opset_version=17, dynamo=False,
   )
   int8 = out / "model.int8.onnx"
-  quantize_dynamic(str(fp32), str(int8), weight_type=QuantType.QInt8)
+  # Only the transformer's matrix multiplications: quantized convolutions (the waveform feature
+  # encoder) run slower than float on many CPUs.
+  quantize_dynamic(str(fp32), str(int8), weight_type=QuantType.QInt8, op_types_to_quantize=["MatMul"])
   shutil.copy(Path(args.student) / "classes.json", out / "classes.json")
 
   streaming = StreamingConfig()
