@@ -2,6 +2,7 @@
 <resources>
   <string name="app_name">Quran</string>
   <string name="recitation_practice">Recitation practice</string>
+  <string name="recitation_tracking">Recitation tracking (on-device model)</string>
   <string name="downloadPrompt_title">Download Required Files?</string>
   <string name="downloadPrompt">In order for Quran Android to work properly,
         we need to download some files. If you do not do this now, the app
