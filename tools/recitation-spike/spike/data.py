@@ -44,7 +44,10 @@ def _download(url: str, path: Path) -> Path:
   if not path.exists():
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
+    # The Quran data server refuses Python's default user agent.
+    request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+    with urllib.request.urlopen(request) as response, open(tmp, "wb") as out:
+      out.write(response.read())
     tmp.rename(path)
   return path
 
