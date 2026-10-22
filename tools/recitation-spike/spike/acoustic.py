@@ -72,7 +72,7 @@ class AcousticModel:
     Results are cached on disk since this is the slow part of an evaluation.
     """
     key = hashlib.sha1(
-      f"{self.model_id}|{self._version()}|{config}|{len(audio)}|{audio[::997].tobytes().hex()}".encode()
+      f"{self.model_id}|{self._version()}|aligned|{config}|{len(audio)}|{audio[::997].tobytes().hex()}".encode()
     ).hexdigest()[:16]
     cache = Path(DATA) / "cache" / f"{key}.npy"
     if cache.exists():
@@ -86,12 +86,13 @@ class AcousticModel:
       end = min(start + hop, len(audio))
       window_end = min(end + lookahead, len(audio))
       log_probs = self._log_probs(audio[max(0, start - context):window_end])
-      future_frames = round((window_end - end) / SAMPLE_RATE / FRAME_SECONDS)
       new_frames = round((end - start) / SAMPLE_RATE / FRAME_SECONDS)
       if new_frames == 0:
-        continue  # a few trailing samples; [-0:] below would repeat the whole window
-      kept = log_probs[: log_probs.shape[0] - future_frames] if future_frames else log_probs
-      chunks.append(kept[-new_frames:])
+        continue
+      # Pick frames by position: the model emits one frame fewer than the window length suggests,
+      # and the missing frame is at the end.
+      first = round((start - max(0, start - context)) / SAMPLE_RATE / FRAME_SECONDS)
+      chunks.append(log_probs[first:first + new_frames])
     result = np.concatenate(chunks)
     cache.parent.mkdir(parents=True, exist_ok=True)
     np.save(cache, result)
