@@ -25,19 +25,25 @@ from spike.tracker import SkeletonScores
 
 TEACHER = "rabah2026/wav2vec2-large-xlsr-53-arabic-quran-v_final"
 STUDENT_INIT = "TBOGamer22/wav2vec2-quran-phonetics"
-TRAINING_SURAS = [36, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89]
+# Shortest first: labelling goes sura by sura across all reciters, so a partial run still covers
+# every voice.
+TRAINING_SURAS = [86, 87, 82, 84, 85, 88, 81, 89, 83, 79, 80, 78, 36]
 HOP = 320  # samples per frame
 LABELS = DATA / "distill" / "labels"
 
 
 def label(args):
   """Teacher skeleton-class log-probabilities for every training recording, full context."""
+  torch.set_num_threads(4)
   teacher = AcousticModel(TEACHER)
   scores = SkeletonScores(teacher.vocab, teacher.blank_id)
   LABELS.mkdir(parents=True, exist_ok=True)
-  step, pad = 500 * HOP, 250 * HOP  # 10 s kept per 20 s window; multiples of HOP keep frames aligned
-  for reciter in TRAINING_RECITERS:
-    for sura in TRAINING_SURAS:
+  (LABELS / "classes.json").write_text(json.dumps(
+    {"blank": 0, "letters": sorted(scores.class_of, key=scores.class_of.get)}, ensure_ascii=False
+  ))
+  step, pad = 500 * HOP, 150 * HOP  # 10 s kept per 16 s window; multiples of HOP keep frames aligned
+  for sura in TRAINING_SURAS:
+    for reciter in TRAINING_RECITERS:
       out = LABELS / f"{reciter.replace('/', '_')}_{sura:03d}.npy"
       if out.exists():
         continue
@@ -54,9 +60,6 @@ def label(args):
       np.save(out, classes.astype(np.float16))
       print(f"labelled {out.name}: {len(audio) / SAMPLE_RATE:.0f}s in {time.time() - started:.0f}s",
             flush=True)
-  (LABELS / "classes.json").write_text(json.dumps(
-    {"blank": 0, "letters": sorted(scores.class_of, key=scores.class_of.get)}, ensure_ascii=False
-  ))
 
 
 def student_model(n_classes: int, layers: int) -> Wav2Vec2ForCTC:
