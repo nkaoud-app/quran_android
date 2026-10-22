@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -25,7 +27,9 @@ import com.quran.recitation.common.ExpectedWord
 import com.quran.recitation.common.RecognizedWord
 import com.quran.recitation.common.RecitationAlignmentEngine
 import dev.zacsweers.metro.Inject
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.disposables.Disposable
 
 /** First end-to-end test surface for recitation alignment. */
 class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
@@ -38,8 +42,21 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private var expectedText = ""
   private var expectedWords = emptyList<ExpectedWord>()
   private var autoStartNextAyah = false
-  private var matchAdvanceScheduled = false
   private val disposables = CompositeDisposable()
+  private var currentLoad: Disposable? = null
+  private val handler = Handler(Looper.getMainLooper())
+
+  // True from "Start listening" until "Stop listening"; in auto tracking mode the recognizer is
+  // restarted whenever a session ends early (e.g. the reader pauses between phrases).
+  private var listeningRequested = false
+  // Text heard in earlier recognizer sessions for the current ayah.
+  private var heardText = ""
+  // Latest partial result of the current session, kept in case the session ends with an error.
+  private var pendingText = ""
+  private var consecutiveErrors = 0
+  private val restartListening = Runnable {
+    if (listeningRequested && speechRecognizer == null && !isFinishing) startRecognizer()
+  }
 
   private var speechRecognizer: SpeechRecognizer? = null
   private lateinit var status: TextView
@@ -142,23 +159,24 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   private fun loadAyah() {
     status.text = "Loading ayah…"
     actionButton.isEnabled = false
+    currentLoad?.let(disposables::remove)
     val suraAyah = SuraAyah(currentSura, currentAyah)
-    disposables.add(arabicDatabaseUtils.getVerses(suraAyah, suraAyah).subscribe({ verses ->
-      val verse = verses.firstOrNull()
-      if (verse == null) {
-        runOnUiThread {
+    val load = arabicDatabaseUtils.getVerses(suraAyah, suraAyah)
+      .observeOn(AndroidSchedulers.mainThread())
+      .subscribe({ verses ->
+        val verse = verses.firstOrNull()
+        if (verse == null) {
+          stopListening()
           status.text = "Arabic Quran data is not available. Download it from Quran data settings."
           actionButton.isEnabled = false
+          return@subscribe
         }
-        return@subscribe
-      }
-      expectedText = ArabicDatabaseUtils.getAyahWithoutBasmallah(
-        currentSura, currentAyah, verse.text
-      ).trim()
-      expectedWords = expectedText.split(Regex("\\s+"))
-        .filter(String::isNotBlank)
-        .mapIndexed { index, text -> ExpectedWord(index, text) }
-      runOnUiThread {
+        expectedText = ArabicDatabaseUtils.getAyahWithoutBasmallah(
+          currentSura, currentAyah, verse.text
+        ).trim()
+        expectedWords = expectedText.split(Regex("\\s+"))
+          .filter(String::isNotBlank)
+          .mapIndexed { index, text -> ExpectedWord(index, text) }
         reference.text = expectedText
         location.text = "Surah $currentSura, ayah $currentAyah"
         status.text = "Ready"
@@ -169,34 +187,35 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
         nextButton.isEnabled = currentSura != 114 || currentAyah != quranInfo.getNumberOfAyahs(114)
         if (autoStartNextAyah) {
           autoStartNextAyah = false
-          if (!isFinishing && speechRecognizer == null) startListening()
+          if (listeningRequested && !isFinishing && speechRecognizer == null) startRecognizer()
         }
-      }
-    }, {
-      runOnUiThread {
+      }, {
+        stopListening()
         status.text = "Unable to load this ayah. Download the Arabic Quran data and try again."
         actionButton.isEnabled = false
-      }
-    }))
+      })
+    currentLoad = load
+    disposables.add(load)
   }
 
-  private fun moveAyah(delta: Int, startListeningWhenReady: Boolean = false) {
-    if (speechRecognizer != null) stopListening()
+  private fun moveAyah(delta: Int, keepListening: Boolean = false) {
     val next = when {
       delta < 0 && currentAyah > 1 -> SuraAyah(currentSura, currentAyah - 1)
       delta < 0 && currentSura > 1 -> SuraAyah(currentSura - 1, quranInfo.getNumberOfAyahs(currentSura - 1))
       delta > 0 && currentAyah < quranInfo.getNumberOfAyahs(currentSura) -> SuraAyah(currentSura, currentAyah + 1)
       delta > 0 && currentSura < 114 -> SuraAyah(currentSura + 1, 1)
-      else -> return
+      else -> null
     }
+    if (keepListening && next != null) releaseRecognizer() else stopListening()
+    if (next == null) return
     currentSura = next.sura
     currentAyah = next.ayah
-    autoStartNextAyah = startListeningWhenReady
+    autoStartNextAyah = keepListening
     loadAyah()
   }
 
   private fun toggleListening() {
-    if (speechRecognizer != null) {
+    if (listeningRequested) {
       stopListening()
       return
     }
@@ -210,78 +229,118 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
   }
 
   private fun startListening() {
+    listeningRequested = true
+    consecutiveErrors = 0
+    feedback.text = ""
+    startRecognizer()
+  }
+
+  private fun startRecognizer() {
     val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
     speechRecognizer = recognizer
+    pendingText = ""
     recognizer.setRecognitionListener(SessionRecognitionListener(recognizer))
     recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
       putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
       putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar")
-        putExtra(
-          RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-          RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        )
+      putExtra(
+        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+      )
       putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
       putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
     })
     actionButton.text = "Stop listening"
     status.text = "Listening…"
-    feedback.text = ""
   }
 
-  private fun stopListening() {
+  /** Ends the current recognizer session without ending the user's listening request. */
+  private fun releaseRecognizer() {
+    handler.removeCallbacks(restartListening)
     speechRecognizer?.stopListening()
     speechRecognizer?.destroy()
     speechRecognizer = null
+  }
+
+  private fun stopListening() {
+    releaseRecognizer()
+    listeningRequested = false
+    autoStartNextAyah = false
+    heardText = ""
+    pendingText = ""
     actionButton.text = "Start listening"
     status.text = "Stopped"
   }
 
-  private fun updateAlignment(text: String, advanceWhenMatched: Boolean = false) {
-    if (expectedWords.isEmpty()) return
+  private val autoTracking: Boolean
+    get() = autoTrackingSwitch.isChecked
+
+  /** Restarts recognition for the same ayah, keeping what was heard so far. */
+  private fun continueListening() {
+    heardText = combinedWith(pendingText)
+    releaseRecognizer()
+    status.text = "Listening…"
+    handler.postDelayed(restartListening, RESTART_DELAY_MS)
+  }
+
+  private fun combinedWith(text: String): String = "$heardText $text".trim()
+
+  /** Returns true when the ayah was matched and auto tracking moved to the next one. */
+  private fun updateAlignment(text: String): Boolean {
+    if (expectedWords.isEmpty()) return false
     val recognized = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
       .map { RecognizedWord(it) }
     val result = alignmentEngine.align(expectedWords, recognized)
     transcript.text = "Recognized: $text"
+
+    // Every expected word was heard; repeated words (e.g. when resuming after a pause) are fine.
+    if (autoTracking && result.matchedWords.size == expectedWords.size) {
+      feedback.text = "Ayah matched. Moving to the next ayah…"
+      heardText = ""
+      moveAyah(1, keepListening = true)
+      return true
+    }
+
     feedback.text = when {
       result.substitutions.isNotEmpty() -> "Possible word difference: " +
         result.substitutions.joinToString { "${it.expected.text} → ${it.recognized.text}" }
       result.missingWords.isNotEmpty() -> "Please repeat: " + result.missingWords.joinToString { it.text }
       result.unexpectedWords.isNotEmpty() -> "Unexpected/repeated word: " +
         result.unexpectedWords.joinToString { it.text }
-      result.matchedWords.size == expectedWords.size -> {
-        if (advanceWhenMatched) {
-          scheduleNextAyah()
-          "Ayah matched. Moving to the next ayah…"
-        } else {
-          "Ayah matched. Finishing…"
-        }
-      }
+      result.matchedWords.size == expectedWords.size -> "Ayah matched."
       else -> "Keep going…"
     }
-  }
-
-  private fun scheduleNextAyah() {
-    if (matchAdvanceScheduled) return
-    matchAdvanceScheduled = true
-    stopListening()
-    matchAdvanceScheduled = false
-    moveAyah(1, startListeningWhenReady = true)
+    return false
   }
 
   override fun onPartialResults(results: Bundle?) {
-    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-      ?.firstOrNull()?.let { updateAlignment(it, advanceWhenMatched = false) }
+    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+      ?.firstOrNull() ?: return
+    consecutiveErrors = 0
+    pendingText = text
+    updateAlignment(combinedWith(text))
   }
 
   override fun onResults(results: Bundle?) {
-    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-      ?.firstOrNull()?.let {
-        updateAlignment(it, advanceWhenMatched = autoTrackingSwitch.isChecked)
-      }
-    if (speechRecognizer != null) stopListening()
+    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+      ?.firstOrNull().orEmpty()
+    pendingText = text
+    if (updateAlignment(combinedWith(text))) return
+    if (autoTracking && listeningRequested) {
+      continueListening()
+    } else {
+      stopListening()
+    }
   }
 
   override fun onError(error: Int) {
+    val recoverable = error == SpeechRecognizer.ERROR_NO_MATCH ||
+      error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ||
+      error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+    if (autoTracking && listeningRequested && recoverable && ++consecutiveErrors <= MAX_AUTO_RETRIES) {
+      continueListening()
+      return
+    }
     stopListening()
     status.text = if (error == SpeechRecognizer.ERROR_NO_MATCH) {
       "No speech recognized. Speak closer to the microphone and tap Start again."
@@ -308,6 +367,7 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   override fun onDestroy() {
     stopListening()
+    handler.removeCallbacksAndMessages(null)
     disposables.clear()
     super.onDestroy()
   }
@@ -332,6 +392,8 @@ class RecitationPracticeActivity : AppCompatActivity(), RecognitionListener {
 
   companion object {
     private const val REQUEST_AUDIO = 1001
+    private const val RESTART_DELAY_MS = 300L
+    private const val MAX_AUTO_RETRIES = 5
     const val EXTRA_SURA = "extra_sura"
     const val EXTRA_AYAH = "extra_ayah"
   }
