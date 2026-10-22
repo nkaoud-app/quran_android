@@ -30,7 +30,9 @@ class StreamingFramesTest {
     // With a 1 s hop and 1 s look-ahead, the last second still waits for its look-ahead.
     assertThat(frames.size).isEqualTo(9 * 50)
     frames += streaming.finish()
-    assertThat(frames.size).isEqualTo(10 * 50)
+    // The final window ends with the audio, and the model emits one frame fewer than the window
+    // length suggests, so the very last frame of the recording is not available.
+    assertThat(frames.size).isEqualTo(10 * 50 - 1)
 
     val loudest = frames.indices.maxBy { frames[it][1] }
     assertThat(loudest).isEqualTo(click / 320)
