@@ -22,12 +22,20 @@ class StreamingConfig:
 
 
 class AcousticModel:
-  """A Hugging Face CTC model, or a distilled student directory (with classes.json)."""
+  """A Hugging Face CTC model, a distilled student directory (with classes.json), or a student
+  exported to ONNX (model*.onnx next to its classes.json)."""
 
   def __init__(self, model_id: str):
     self.model_id = model_id
-    self.model = Wav2Vec2ForCTC.from_pretrained(model_id).float().eval().to(DEVICE)
-    classes = Path(model_id) / "classes.json"
+    self.onnx = None
+    if model_id.endswith(".onnx"):
+      import onnxruntime
+
+      self.onnx = onnxruntime.InferenceSession(model_id, providers=["CPUExecutionProvider"])
+      classes = Path(model_id).parent / "classes.json"
+    else:
+      self.model = Wav2Vec2ForCTC.from_pretrained(model_id).float().eval().to(DEVICE)
+      classes = Path(model_id) / "classes.json"
     if classes.exists():  # student: outputs skeleton classes directly
       letters = json.loads(classes.read_text())["letters"]
       self.vocab = {"<blank>": 0} | {letter: i + 1 for i, letter in enumerate(letters)}
@@ -44,13 +52,16 @@ class AcousticModel:
       inputs = self.processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt").input_values
     else:
       inputs = torch.tensor((audio - audio.mean()) / (audio.std() + 1e-7))[None]
+    if self.onnx:
+      logits = torch.tensor(self.onnx.run(None, {"audio": inputs.numpy()})[0][0])
+      return torch.log_softmax(logits, dim=-1).numpy()
     with torch.autocast("cuda", dtype=torch.float16, enabled=DEVICE == "cuda"):
       logits = self.model(inputs.to(DEVICE)).logits[0]
     return torch.log_softmax(logits.float(), dim=-1).cpu().numpy()
 
   def _version(self) -> str:
     """Changes when a local (student) checkpoint is retrained, so cached outputs are not reused."""
-    weights = Path(self.model_id) / "model.safetensors"
+    weights = Path(self.model_id) if self.onnx else Path(self.model_id) / "model.safetensors"
     return str(weights.stat().st_mtime) if weights.exists() else ""
 
   def streaming_log_probs(self, audio: np.ndarray, config: StreamingConfig) -> np.ndarray:
