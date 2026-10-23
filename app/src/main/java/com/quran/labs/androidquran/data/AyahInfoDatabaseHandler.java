@@ -43,6 +43,8 @@ public class AyahInfoDatabaseHandler {
 
   // Glyphs narrower than this share of the text width are pause marks, not words.
   private static final float MAX_MARK_WIDTH_RATIO = 0.019f;
+  // Room around a pause mark's glyph, as a share of the text width.
+  private static final float MARK_PADDING_RATIO = 0.004f;
 
   private final SQLiteDatabase database;
   private final boolean hasGlyphData;
@@ -188,7 +190,8 @@ public class AyahInfoDatabaseHandler {
    * Bounds of each word on the page ("sura:ayah:word", words counted from 1 within the ayah), for
    * databases without glyph types. Their glyphs are, in order, an ayah's words and pause marks and
    * then its number. Pause marks are told apart by their width; this matches the word count of the
-   * Arabic text in all but 2 of the 6236 ayahs of the Madani pages, at every page size.
+   * Arabic text in all but 2 of the 6236 ayahs of the Madani pages, at every page size. Pause marks
+   * are part of the word before them.
    */
   @NonNull
   private Map<String, List<AyahBounds>> getWordBoundsForPage(int page) {
@@ -196,6 +199,7 @@ public class AyahInfoDatabaseHandler {
     Cursor cursor = null;
     try {
       final float maxMarkWidth = MAX_MARK_WIDTH_RATIO * getTextWidth();
+      final float markPadding = MARK_PADDING_RATIO * getTextWidth();
       // every glyph of the ayahs on this page, since words are counted from the start of the ayah
       cursor = database.rawQuery("SELECT g." + COL_PAGE + ", g." + COL_LINE + ", g." + COL_SURA +
           ", g." + COL_AYAH + ", g." + COL_POSITION + ", g." + MIN_X + ", g." + MIN_Y +
@@ -220,17 +224,31 @@ public class AyahInfoDatabaseHandler {
           word = 0;
         }
         final boolean ayahNumber = i == rows.size() - 1 || !sameAyah(row, rows.get(i + 1));
-        if (ayahNumber || row[7] - row[5] <= maxMarkWidth) {
+        if (ayahNumber) {
           continue;
         }
-        word++;
-        if (row[0] == page) {
-          final String key = row[2] + ":" + row[3] + ":" + word;
-          List<AyahBounds> bounds = words.get(key);
-          if (bounds == null) {
-            bounds = new ArrayList<>();
-            words.put(key, bounds);
-          }
+        final boolean pauseMark = row[7] - row[5] <= maxMarkWidth;
+        if (!pauseMark) {
+          word++;
+        }
+        if (row[0] != page || word == 0) {
+          continue;
+        }
+        final String key = row[2] + ":" + row[3] + ":" + word;
+        List<AyahBounds> bounds = words.get(key);
+        if (bounds == null) {
+          bounds = new ArrayList<>();
+          words.put(key, bounds);
+        }
+        if (pauseMark) {
+          // A pause mark belongs to the word before it, so it is hidden and colored with it. Its
+          // glyph is only an anchor (often a few pixels wide), so cover a square around it.
+          final float center = (row[5] + row[7]) / 2f;
+          final float half = Math.max(Math.abs(row[7] - row[5]), row[8] - row[6]) / 2f + markPadding;
+          bounds.add(new AyahBounds(row[1], row[4],
+              Math.round(center - half), Math.round(row[6] - markPadding),
+              Math.round(center + half), Math.round(row[8] + markPadding)));
+        } else {
           bounds.add(new AyahBounds(row[1], row[4], row[5], row[6], row[7], row[8]));
         }
       }
