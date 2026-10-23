@@ -33,6 +33,24 @@ class WordCheckerTest {
     assertThat(spoken("ذَ ٰ⁠لِكَ")).isEqualTo("ذ ل ك")
   }
 
+  @Test
+  fun `spoken letters know where they are written, with their marks`() {
+    val word = "ٱلدُّنۡيَا"
+    val letters = WordChecker.spokenLetters(word)
+    assertThat(letters.map { word.substring(it.start, it.end) }).containsExactly("دُّ", "نۡ", "يَ").inOrder()
+    val spaced = "ذَ ٰ⁠لِكَ" // spacing characters inside the word are skipped
+    assertThat(WordChecker.spokenLetters(spaced).map { spaced.substring(it.start, it.end) })
+      .containsExactly("ذَ", "لِ", "كَ").inOrder()
+  }
+
+  @Test
+  fun `weak letters are the worst and any other with a large share of the deficit`() {
+    val check = WordCheck(deficit = -12.0, worstLetter = 2, letterDeficits = listOf(-0.5, -4.5, -6.0, 0.0))
+    assertThat(check.weakLetters).containsExactly(1, 2).inOrder()
+    assertThat(WordCheck(-9.0, 0, listOf(-9.0, -1.0)).weakLetters).containsExactly(0)
+    assertThat(WordCheck(0.0, 0, listOf(0.0, 0.0)).weakLetters).isEmpty()
+  }
+
   /** Word checks for Minshawi's al-Fatiha must match the Python spike (spike/mistakes.py). */
   @Test
   fun `checks al-Fatiha exactly like the Python checker`() {

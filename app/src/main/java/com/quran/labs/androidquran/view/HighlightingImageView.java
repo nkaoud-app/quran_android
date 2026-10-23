@@ -214,6 +214,9 @@ public class HighlightingImageView extends AppCompatImageView {
     for (Map.Entry<String, List<AyahBounds>> entry: ayahCoordinates.getAyahCoordinates().entrySet()) {
       highlightCoordinates.put(new SingleAyahHighlight(entry.getKey()), entry.getValue());
     }
+    for (Map.Entry<String, List<AyahBounds>> entry: ayahCoordinates.getWordCoordinates().entrySet()) {
+      highlightCoordinates.put(new SingleAyahHighlight(entry.getKey()), entry.getValue());
+    }
   }
 
   public void setNightMode(boolean isNightMode, int textBrightness, int backgroundBrightness) {

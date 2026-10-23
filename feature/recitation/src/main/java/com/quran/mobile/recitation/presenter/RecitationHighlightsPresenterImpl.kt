@@ -18,11 +18,11 @@ import kotlinx.coroutines.flow.onEach
 
 /**
  * Shows the recitation session on a mushaf page: recited words turn green (orange when the
- * mistake check found them unclear), the word being recited and its ayah are highlighted, and
- * words not yet recited can be hidden.
+ * mistake check found them unclear), the word being recited is highlighted, and words not yet
+ * recited can be hidden.
  *
- * Word highlights need the page's word coordinates; on pages without them only the ayah being
- * recited (and, when hiding, the ayahs not yet started) show.
+ * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler); without them,
+ * hiding still hides the ayahs not yet started.
  */
 @QuranPageScope
 class RecitationHighlightsPresenterImpl @Inject constructor(
@@ -68,9 +68,6 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
   private fun highlightsFor(progress: MushafRecitationProgress, pages: Set<Int>): List<HighlightInfo> {
     val result = ArrayList<HighlightInfo>()
     val currentAyah = progress.currentAyah
-    if (currentAyah != null && progress.pages[progress.indexOf(currentAyah)] in pages) {
-      result += highlight(currentAyah, -1, CURRENT_AYAH)
-    }
     var lastHiddenAyah: SuraAyah? = null
     progress.words.forEachIndexed { index, word ->
       if (progress.pages[index] !in pages) return@forEachIndexed
@@ -105,7 +102,6 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
 
   companion object {
     // Ids after the app's own highlight types (selection, audio, bookmarks, colors, reading bookmarks).
-    val CURRENT_AYAH = HighlightType(40, R.color.recitation_current_ayah, Mode.UNDERLAY)
     val RECITED = HighlightType(
       41, R.color.recitation_recited, Mode.COLOR, nightColorResId = R.color.recitation_recited_night,
     )
@@ -115,6 +111,6 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
     val HIDDEN = HighlightType(43, R.color.recitation_hidden, Mode.HIDE)
     val CURRENT_WORD = HighlightType(44, R.color.recitation_current_word, Mode.HIGHLIGHT)
 
-    private val TYPES = listOf(CURRENT_AYAH, RECITED, UNCLEAR, HIDDEN, CURRENT_WORD)
+    private val TYPES = listOf(RECITED, UNCLEAR, HIDDEN, CURRENT_WORD)
   }
 }

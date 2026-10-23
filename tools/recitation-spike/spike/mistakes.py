@@ -46,13 +46,13 @@ def spoken_letters(word: str) -> list[tuple[str, bool]]:
   return letters
 
 
-def word_deficit(frames, tokens, skip_penalty=4.0, optional=None):
+def word_deficit(frames, tokens, skip_penalty=4.0, optional=None, letters=False):
   """How much worse the word's expected letters explain these frames than the model's free choice.
 
   Local CTC alignment: free frames before, the word's letters in order (blank between repeats,
   a letter may be skipped at `skip_penalty`), free frames after. Returns (deficit, worst letter
   index): deficit is 0 when the expected letters are exactly what the model heard, more negative
-  the more the audio disagrees.
+  the more the audio disagrees. With `letters`, also each letter's share of the deficit.
   """
   free = frames.max(axis=1)
   n = 2 * len(tokens) + 1
@@ -117,7 +117,10 @@ def word_deficit(frames, tokens, skip_penalty=4.0, optional=None):
     if state == -1:
       break
   per_letter[~visited] -= skip_penalty
-  return deficit, int(np.argmin(per_letter)) if len(tokens) else 0
+  worst = int(np.argmin(per_letter)) if len(tokens) else 0
+  if letters:
+    return deficit, worst, per_letter
+  return deficit, worst
 
 
 

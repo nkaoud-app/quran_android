@@ -8,5 +8,7 @@ data class AyahCoordinates @JvmOverloads constructor(
   val glyphCoordinates: PageGlyphsCoords?,
   // one bounds per line of each ayah, aligned with the line
   val ayahLineCoordinates: Map<String, List<AyahBounds>> = emptyMap(),
-  val underlineRaiseRatio: Float = 0f
+  val underlineRaiseRatio: Float = 0f,
+  // bounds of each word ("sura:ayah:word", words counted from 1) when the page has no glyph data
+  val wordCoordinates: Map<String, List<AyahBounds>> = emptyMap()
 )

@@ -30,6 +30,7 @@ import com.quran.recitation.tracking.RecitationModel
 import com.quran.recitation.tracking.RecitationTracker
 import com.quran.recitation.tracking.RecitationTrackingSetting
 import com.quran.recitation.tracking.RecitationTrackingSettings
+import com.quran.recitation.tracking.SpokenLetter
 import com.quran.recitation.tracking.WordCheck
 import com.quran.recitation.tracking.WordChecker
 import dev.zacsweers.metro.Inject
@@ -402,8 +403,14 @@ class RecitationTrackingActivity : AppCompatActivity() {
       val start = text.length
       text.append(word.text)
       if (index < completed) {
-        val color = if (isUnclear(index)) UNCLEAR else RECITED
-        text.setSpan(ForegroundColorSpan(color), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val unclear = isUnclear(index)
+        text.setSpan(ForegroundColorSpan(if (unclear) UNCLEAR else RECITED), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (unclear) {
+          // The letters that most likely went wrong, with their vowel marks.
+          for (letter in weakLetters(index)) {
+            text.setSpan(ForegroundColorSpan(WEAK_LETTER), start + letter.start, start + letter.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+          }
+        }
       }
       if (index == current) {
         text.setSpan(BackgroundColorSpan(CURRENT), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -412,15 +419,19 @@ class RecitationTrackingActivity : AppCompatActivity() {
     return text
   }
 
-  /** e.g. "Ayah 5: all 12 words clear" or "Ayah 5: 1 unclear word: وَجَعَلۡنَٰهَا (و)". */
+  private fun weakLetters(word: Int): List<SpokenLetter> {
+    val check = wordChecks.getOrNull(word) ?: return emptyList()
+    val letters = WordChecker.spokenLetters(words[word].text)
+    return check.weakLetters.mapNotNull { letters.getOrNull(it) }
+  }
+
+  /** e.g. "Ayah 5: all 12 words clear" or "Ayah 5: 1 unclear word: وَجَعَلۡنَٰهَا (و، ن)". */
   private fun summary(ayah: Int, ayahWords: List<Int>): String {
     val unclear = ayahWords.filter(::isUnclear)
     if (unclear.isEmpty()) return "Ayah $ayah: all ${ayahWords.size} words clear"
     val details = unclear.joinToString("، ") { w ->
-      val check = wordChecks[w]
-      val letters = WordChecker.spokenLetters(words[w].text)
-      val letter = check?.let { letters.getOrNull(it.worstLetter)?.letter }
-      if (letter != null) "${words[w].text} ($letter)" else words[w].text
+      val letters = weakLetters(w)
+      if (letters.isEmpty()) words[w].text else "${words[w].text} (${letters.joinToString("، ") { it.letter.toString() }})"
     }
     return "Ayah $ayah: ${unclear.size} unclear word${if (unclear.size > 1) "s" else ""}: $details"
   }
@@ -454,5 +465,6 @@ class RecitationTrackingActivity : AppCompatActivity() {
     private val RECITED = Color.rgb(0x2E, 0x7D, 0x32)
     private val CURRENT = Color.argb(0x66, 0xFF, 0xC1, 0x07)
     private val UNCLEAR = Color.rgb(0xE6, 0x51, 0x00)
+    private val WEAK_LETTER = Color.rgb(0xD5, 0x00, 0x00)
   }
 }

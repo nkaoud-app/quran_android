@@ -1,7 +1,16 @@
 package com.quran.recitation.tracking
 
-/** A consonant of a word as pronounced; [optional] letters may go unheard (vowel letters, hamza). */
-data class SpokenLetter(val letter: Char, val classId: Int, val optional: Boolean)
+/**
+ * A consonant of a word as pronounced; [optional] letters may go unheard (vowel letters, hamza).
+ * [start] until [end] is where it is written in the word, with its marks.
+ */
+data class SpokenLetter(
+  val letter: Char,
+  val classId: Int,
+  val optional: Boolean,
+  val start: Int = 0,
+  val end: Int = 0,
+)
 
 /** How well a recited word matched what was expected. */
 data class WordCheck(
@@ -9,7 +18,23 @@ data class WordCheck(
   val deficit: Double,
   /** Index into the word's [SpokenLetter]s of the letter that matched worst. */
   val worstLetter: Int,
-)
+  /** Each letter's share of the deficit (letters skipped cost the skip penalty). */
+  val letterDeficits: List<Double> = emptyList(),
+) {
+  /**
+   * The letters that most likely went wrong: the worst one, and any other that accounts for at
+   * least [WEAK_SHARE] of the deficit.
+   */
+  val weakLetters: List<Int>
+    get() = if (deficit >= 0) emptyList() else letterDeficits.indices.filter {
+      it == worstLetter || letterDeficits[it] < 0 && letterDeficits[it] <= WEAK_SHARE * deficit
+    }
+
+  companion object {
+    /** In a word whose audio was replaced by another word, this marks 3 of its 4 letters. */
+    const val WEAK_SHARE = 0.25
+  }
+}
 
 /**
  * Checks recited words for possible mistakes ("goodness of pronunciation").
@@ -139,12 +164,17 @@ class WordChecker(
      */
     fun spokenLetters(word: String): List<SpokenLetter> {
       val units = ArrayList<Pair<Char, String>>() // base character and its marks
-      for (c in word) {
-        if (c in INVISIBLE) continue
+      val starts = ArrayList<Int>() // where each unit starts in the word
+      val ends = ArrayList<Int>()
+      word.forEachIndexed { index, c ->
+        if (c in INVISIBLE) return@forEachIndexed
         if (c in MARKS && units.isNotEmpty()) {
           units[units.size - 1] = units.last().let { it.first to it.second + c }
+          ends[ends.size - 1] = index + 1
         } else {
           units += c to ""
+          starts += index
+          ends += index + 1
         }
       }
       val letters = ArrayList<SpokenLetter>()
@@ -157,7 +187,7 @@ class WordChecker(
           return@forEachIndexed // sun-letter lam: silent
         }
         val optional = base in "ىؤئ" || (base in "وي" && marks.isEmpty())
-        letters += SpokenLetter(RecitationSkeleton.skeleton(base.toString())[0], tokens[0], optional)
+        letters += SpokenLetter(RecitationSkeleton.skeleton(base.toString())[0], tokens[0], optional, starts[i], ends[i])
       }
       return letters
     }
@@ -256,7 +286,7 @@ class WordChecker(
       for (k in 0 until tokens) if (!visited[k]) perLetter[k] -= skipPenalty
       var worst = 0
       for (k in 1 until tokens) if (perLetter[k] < perLetter[worst]) worst = k
-      return WordCheck(deficit, worst)
+      return WordCheck(deficit, worst, perLetter.toList())
     }
 
     private const val NEG = -1e18

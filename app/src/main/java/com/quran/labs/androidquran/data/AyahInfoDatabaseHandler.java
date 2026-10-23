@@ -18,6 +18,7 @@ import com.quran.page.common.data.coordinates.PageGlyphsCoords;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,12 @@ public class AyahInfoDatabaseHandler {
   private static final Map<String, AyahInfoDatabaseHandler> ayahInfoCache = new HashMap<>();
   private static File quranDatabaseDirectory = null;
 
+  // Glyphs narrower than this share of the text width are pause marks, not words.
+  private static final float MAX_MARK_WIDTH_RATIO = 0.019f;
+
   private final SQLiteDatabase database;
   private final boolean hasGlyphData;
+  private int textWidth = -1;
 
   static AyahInfoDatabaseHandler getAyahInfoDatabaseHandler(
       String databaseName, QuranFileUtils quranFileUtils) {
@@ -173,8 +178,87 @@ public class AyahInfoDatabaseHandler {
 
     PageGlyphsCoords glyphCoords = includeGlyphData ?
         new PageGlyphsCoords(page, glyphsBuilder.build()) : null;
+    Map<String, List<AyahBounds>> wordBounds = includeGlyphData ?
+        Collections.emptyMap() : getWordBoundsForPage(page);
 
-    return new AyahCoordinates(page, ayahBounds, glyphCoords);
+    return new AyahCoordinates(page, ayahBounds, glyphCoords, Collections.emptyMap(), 0f, wordBounds);
+  }
+
+  /**
+   * Bounds of each word on the page ("sura:ayah:word", words counted from 1 within the ayah), for
+   * databases without glyph types. Their glyphs are, in order, an ayah's words and pause marks and
+   * then its number. Pause marks are told apart by their width; this matches the word count of the
+   * Arabic text in all but 2 of the 6236 ayahs of the Madani pages, at every page size.
+   */
+  @NonNull
+  private Map<String, List<AyahBounds>> getWordBoundsForPage(int page) {
+    final Map<String, List<AyahBounds>> words = new HashMap<>();
+    Cursor cursor = null;
+    try {
+      final float maxMarkWidth = MAX_MARK_WIDTH_RATIO * getTextWidth();
+      // every glyph of the ayahs on this page, since words are counted from the start of the ayah
+      cursor = database.rawQuery("SELECT g." + COL_PAGE + ", g." + COL_LINE + ", g." + COL_SURA +
+          ", g." + COL_AYAH + ", g." + COL_POSITION + ", g." + MIN_X + ", g." + MIN_Y +
+          ", g." + MAX_X + ", g." + MAX_Y + " FROM " + GLYPHS_TABLE + " g JOIN (SELECT DISTINCT " +
+          COL_SURA + ", " + COL_AYAH + " FROM " + GLYPHS_TABLE + " WHERE " + COL_PAGE + " = ?) a ON g." +
+          COL_SURA + " = a." + COL_SURA + " AND g." + COL_AYAH + " = a." + COL_AYAH +
+          " ORDER BY g." + COL_SURA + ", g." + COL_AYAH + ", g." + COL_POSITION,
+          new String[] { String.valueOf(page) });
+      final List<int[]> rows = new ArrayList<>();
+      while (cursor.moveToNext()) {
+        final int[] row = new int[9];
+        for (int i = 0; i < row.length; i++) {
+          row[i] = cursor.getInt(i);
+        }
+        rows.add(row);
+      }
+
+      int word = 0;
+      for (int i = 0; i < rows.size(); i++) {
+        final int[] row = rows.get(i);
+        if (i == 0 || !sameAyah(rows.get(i - 1), row)) {
+          word = 0;
+        }
+        final boolean ayahNumber = i == rows.size() - 1 || !sameAyah(row, rows.get(i + 1));
+        if (ayahNumber || row[7] - row[5] <= maxMarkWidth) {
+          continue;
+        }
+        word++;
+        if (row[0] == page) {
+          final String key = row[2] + ":" + row[3] + ":" + word;
+          List<AyahBounds> bounds = words.get(key);
+          if (bounds == null) {
+            bounds = new ArrayList<>();
+            words.put(key, bounds);
+          }
+          bounds.add(new AyahBounds(row[1], row[4], row[5], row[6], row[7], row[8]));
+        }
+      }
+    } catch (Exception e) {
+      // word highlights are optional; ayah highlights still work
+      words.clear();
+    } finally {
+      DatabaseUtils.closeCursor(cursor);
+    }
+    return words;
+  }
+
+  private static boolean sameAyah(int[] first, int[] second) {
+    return first[2] == second[2] && first[3] == second[3];
+  }
+
+  private int getTextWidth() {
+    if (textWidth < 0) {
+      Cursor cursor = null;
+      try {
+        cursor = database.rawQuery(
+            "SELECT MAX(" + MAX_X + ") - MIN(" + MIN_X + ") FROM " + GLYPHS_TABLE, null);
+        textWidth = cursor.moveToFirst() ? cursor.getInt(0) : 0;
+      } finally {
+        DatabaseUtils.closeCursor(cursor);
+      }
+    }
+    return textWidth;
   }
 
   private boolean haveVerseMarkerData() {
