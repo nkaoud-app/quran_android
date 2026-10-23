@@ -191,7 +191,7 @@ public class AyahInfoDatabaseHandler {
    * databases without glyph types. Their glyphs are, in order, an ayah's words and pause marks and
    * then its number. Pause marks are told apart by their width; this matches the word count of the
    * Arabic text in all but 2 of the 6236 ayahs of the Madani pages, at every page size. Pause marks
-   * are part of the word before them.
+   * are part of the word before them, and each word's box spans its line's height.
    */
   @NonNull
   private Map<String, List<AyahBounds>> getWordBoundsForPage(int page) {
@@ -217,40 +217,70 @@ public class AyahInfoDatabaseHandler {
         rows.add(row);
       }
 
+      // Each line's height, so a word's box covers its marks and dots above and below.
+      final Map<Integer, int[]> lines = new HashMap<>();
+      for (int[] row : rows) {
+        if (row[0] != page) {
+          continue;
+        }
+        final int[] line = lines.get(row[1]);
+        if (line == null) {
+          lines.put(row[1], new int[] { row[6], row[8] });
+        } else {
+          line[0] = Math.min(line[0], row[6]);
+          line[1] = Math.max(line[1], row[8]);
+        }
+      }
+
+      // A word's box runs from its right edge to the next word on its line (the text is right to
+      // left), so the pause marks in between belong to the word before them and are hidden and
+      // colored with it.
+      final List<WordBox> boxes = new ArrayList<>();
+      WordBox last = null;
       int word = 0;
       for (int i = 0; i < rows.size(); i++) {
         final int[] row = rows.get(i);
         if (i == 0 || !sameAyah(rows.get(i - 1), row)) {
           word = 0;
+          last = null;
         }
         final boolean ayahNumber = i == rows.size() - 1 || !sameAyah(row, rows.get(i + 1));
-        if (ayahNumber) {
-          continue;
-        }
-        final boolean pauseMark = row[7] - row[5] <= maxMarkWidth;
-        if (!pauseMark) {
+        final boolean pauseMark = !ayahNumber && row[7] - row[5] <= maxMarkWidth;
+        if (!ayahNumber && !pauseMark) {
           word++;
         }
-        if (row[0] != page || word == 0) {
+        if (row[0] != page || ayahNumber || word == 0) {
+          last = null;
           continue;
         }
-        final String key = row[2] + ":" + row[3] + ":" + word;
-        List<AyahBounds> bounds = words.get(key);
-        if (bounds == null) {
-          bounds = new ArrayList<>();
-          words.put(key, bounds);
-        }
         if (pauseMark) {
-          // A pause mark belongs to the word before it, so it is hidden and colored with it. Its
-          // glyph is only an anchor (often a few pixels wide), so cover a square around it.
+          // its glyph is only an anchor, often a few pixels wide
           final float center = (row[5] + row[7]) / 2f;
           final float half = Math.max(Math.abs(row[7] - row[5]), row[8] - row[6]) / 2f + markPadding;
-          bounds.add(new AyahBounds(row[1], row[4],
-              Math.round(center - half), Math.round(row[6] - markPadding),
-              Math.round(center + half), Math.round(row[8] + markPadding)));
+          if (last != null && last.line == row[1]) {
+            last.left = Math.min(last.left, center - half);
+          } else {
+            last = new WordBox(row[2] + ":" + row[3] + ":" + word, row[1], row[4], center - half, center + half);
+            boxes.add(last);
+          }
         } else {
-          bounds.add(new AyahBounds(row[1], row[4], row[5], row[6], row[7], row[8]));
+          if (last != null && last.line == row[1]) {
+            last.left = Math.min(last.left, row[7]);
+          }
+          last = new WordBox(row[2] + ":" + row[3] + ":" + word, row[1], row[4], row[5], row[7]);
+          boxes.add(last);
         }
+      }
+
+      for (WordBox box : boxes) {
+        final int[] line = lines.get(box.line);
+        List<AyahBounds> bounds = words.get(box.key);
+        if (bounds == null) {
+          bounds = new ArrayList<>();
+          words.put(box.key, bounds);
+        }
+        bounds.add(new AyahBounds(box.line, box.position,
+            Math.round(box.left), line[0], Math.round(box.right), line[1]));
       }
     } catch (Exception e) {
       // word highlights are optional; ayah highlights still work
@@ -259,6 +289,22 @@ public class AyahInfoDatabaseHandler {
       DatabaseUtils.closeCursor(cursor);
     }
     return words;
+  }
+
+  private static class WordBox {
+    final String key;
+    final int line;
+    final int position;
+    float left;
+    final float right;
+
+    WordBox(String key, int line, int position, float left, float right) {
+      this.key = key;
+      this.line = line;
+      this.position = position;
+      this.left = left;
+      this.right = right;
+    }
   }
 
   private static boolean sameAyah(int[] first, int[] second) {
