@@ -38,9 +38,10 @@ class WordCheckerTest {
     val word = "ٱلدُّنۡيَا"
     val letters = WordChecker.spokenLetters(word)
     assertThat(letters.map { word.substring(it.start, it.end) }).containsExactly("دُّ", "نۡ", "يَ").inOrder()
-    val spaced = "ذَ ٰ⁠لِكَ" // spacing characters inside the word are skipped
-    assertThat(WordChecker.spokenLetters(spaced).map { spaced.substring(it.start, it.end) })
-      .containsExactly("ذَ", "لِ", "كَ").inOrder()
+    // ذَ<hair space>ٰ<word joiner>لِكَ: the dagger alif after the spacing character is ذ's
+    val spaced = "\u0630\u064e\u200a\u0670\u2060\u0644\u0650\u0643\u064e"
+    assertThat(WordChecker.spokenLetters(spaced).map { it.start to it.end })
+      .containsExactly(0 to 4, 5 to 7, 7 to 9).inOrder()
   }
 
   @Test
