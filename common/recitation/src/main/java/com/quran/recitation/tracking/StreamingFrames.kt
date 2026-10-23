@@ -29,9 +29,10 @@ data class StreamingConfig(
  * Mirrors `streaming_log_probs` in tools/recitation-spike/spike/acoustic.py.
  */
 class StreamingFrames(private val model: FrameModel, config: StreamingConfig = StreamingConfig()) {
-  private val hop = (config.hopSeconds * SAMPLE_RATE).roundToInt()
-  private val context = (config.contextSeconds * SAMPLE_RATE).roundToInt()
-  private val lookahead = (config.lookaheadSeconds * SAMPLE_RATE).roundToInt()
+  // Whole model frames, so every window starts on a frame boundary and frames line up exactly.
+  private val hop = frameAligned(config.hopSeconds).coerceAtLeast(SAMPLES_PER_FRAME.toInt())
+  private val context = frameAligned(config.contextSeconds)
+  private val lookahead = frameAligned(config.lookaheadSeconds)
 
   // Audio from absolute sample `bufferStart` onwards; older audio is no longer needed.
   private var buffer = FloatArray(SAMPLE_RATE * 8)
@@ -115,6 +116,9 @@ class StreamingFrames(private val model: FrameModel, config: StreamingConfig = S
     val logSum = best + ln(sum)
     return FloatArray(logits.size) { (logits[it] - logSum).toFloat() }
   }
+
+  private fun frameAligned(seconds: Double): Int =
+    (seconds * SAMPLE_RATE / SAMPLES_PER_FRAME).roundToInt().coerceAtLeast(0) * SAMPLES_PER_FRAME.toInt()
 
   companion object {
     const val SAMPLE_RATE = 16000

@@ -12,8 +12,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
+import android.text.InputType
 import android.view.Gravity
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -28,7 +30,6 @@ import com.quran.labs.androidquran.model.translation.ArabicDatabaseUtils
 import com.quran.recitation.tracking.OnnxFrameModel
 import com.quran.recitation.tracking.RecitationTracker
 import com.quran.recitation.tracking.StreamingFrames
-import com.quran.recitation.tracking.TrackerConfig
 import dev.zacsweers.metro.Inject
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
@@ -72,6 +73,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private lateinit var nextButton: Button
   private lateinit var previousSuraButton: Button
   private lateinit var nextSuraButton: Button
+  private lateinit var resetSettingsButton: Button
+  private val settingFields = LinkedHashMap<RecitationTrackingSetting, EditText>()
 
   private data class TrackedWord(val ayah: Int, val text: String)
 
@@ -158,7 +161,56 @@ class RecitationTrackingActivity : AppCompatActivity() {
       setPadding(0, padding / 2, 0, 0)
     }
     content.addView(stats)
+    addSettings(content, padding)
     return ScrollView(this).apply { addView(content) }
+  }
+
+  /** Every tracking setting, editable for testing; applied when Start is tapped. */
+  private fun addSettings(content: LinearLayout, padding: Int) {
+    content.addView(TextView(this).apply {
+      text = "Settings (applied when you tap Start)"
+      textSize = 18f
+      setPadding(0, padding, 0, 0)
+    })
+    val saved = RecitationTrackingSettings.load(getSharedPreferences(PREFERENCES, MODE_PRIVATE))
+    RecitationTrackingSetting.entries.forEach { setting ->
+      content.addView(TextView(this).apply {
+        text = "${setting.label}  (default ${setting.format(setting.default)}, " +
+          "${setting.format(setting.min)}–${setting.format(setting.max)})"
+        textSize = 15f
+        setPadding(0, padding / 2, 0, 0)
+      })
+      content.addView(TextView(this).apply {
+        text = setting.explanation
+        textSize = 12f
+      })
+      val field = EditText(this).apply {
+        inputType = if (setting.wholeNumber) InputType.TYPE_CLASS_NUMBER
+        else InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        setText(setting.format(saved[setting]))
+      }
+      settingFields[setting] = field
+      content.addView(field)
+    }
+    resetSettingsButton = Button(this).apply {
+      text = "Reset settings to defaults"
+      setOnClickListener {
+        settingFields.forEach { (setting, field) -> field.setText(setting.format(setting.default)) }
+      }
+    }
+    content.addView(resetSettingsButton)
+  }
+
+  /** Reads the settings fields, keeping each value within its range, and remembers them. */
+  private fun readSettings(): RecitationTrackingSettings {
+    val settings = RecitationTrackingSettings(
+      settingFields.mapValues { (setting, field) ->
+        setting.clamp(field.text.toString().trim().toDoubleOrNull() ?: setting.default)
+      }
+    )
+    settingFields.forEach { (setting, field) -> field.setText(setting.format(settings[setting])) }
+    settings.save(getSharedPreferences(PREFERENCES, MODE_PRIVATE))
+    return settings
   }
 
   /** Loads the sura from the start ayah to its end; the tracker follows the whole stretch. */
@@ -204,6 +256,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
     nextSuraButton.isEnabled = idle && sura < 114
     previousButton.isEnabled = idle && startAyah > 1
     nextButton.isEnabled = idle && startAyah < quranInfo.getNumberOfAyahs(sura)
+    settingFields.values.forEach { it.isEnabled = idle }
+    resetSettingsButton.isEnabled = idle
   }
 
   private fun moveStart(delta: Int) {
@@ -288,10 +342,11 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private fun start() {
     val trackedWords = words
     val phrases = RecitationTracker.openingPhrases(sura, startAyah)
+    val settings = readSettings()
     status.text = "Loading model…"
     session = scope.launch {
       val error = withContext(Dispatchers.IO) {
-        runCatching { listen(trackedWords.map { it.text }, phrases) }.exceptionOrNull()
+        runCatching { listen(trackedWords.map { it.text }, phrases, settings) }.exceptionOrNull()
       }
       if (error != null && error !is CancellationException) {
         stop()
@@ -304,10 +359,14 @@ class RecitationTrackingActivity : AppCompatActivity() {
 
   /** Follows the reader until cancelled: microphone -> model -> tracker -> screen. */
   @SuppressLint("MissingPermission") // checked in onAction
-  private suspend fun listen(trackedWords: List<String>, phrases: List<List<String>>) = coroutineScope {
-    val tracker = RecitationTracker(trackedWords, TrackerConfig(), phrases)
-    OnnxFrameModel(modelFile).use { model ->
-      val streaming = StreamingFrames(model)
+  private suspend fun listen(
+    trackedWords: List<String>,
+    phrases: List<List<String>>,
+    settings: RecitationTrackingSettings,
+  ) = coroutineScope {
+    val tracker = RecitationTracker(trackedWords, settings.tracker, phrases)
+    OnnxFrameModel(modelFile, settings.threads).use { model ->
+      val streaming = StreamingFrames(model, settings.streaming)
       val bufferSize = maxOf(
         AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),
         SAMPLE_RATE * 2 * 4, // 4 s of audio, so a slow model call does not drop audio

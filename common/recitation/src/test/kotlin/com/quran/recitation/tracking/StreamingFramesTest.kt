@@ -39,6 +39,23 @@ class StreamingFramesTest {
   }
 
   @Test
+  fun `odd timing settings still line frames up with the audio`() {
+    val audio = FloatArray(10 * 16000)
+    val click = (6.21 * 16000).toInt()
+    audio[click] = 1f
+    val streaming = StreamingFrames(clickDetector, StreamingConfig(0.33, 2.5, 0.7))
+
+    val frames = ArrayList<FloatArray>()
+    for (start in audio.indices step 1000) {
+      frames += streaming.accept(audio.copyOfRange(start, minOf(start + 1000, audio.size)))
+    }
+    frames += streaming.finish()
+
+    assertThat(frames.indices.maxBy { frames[it][1] }).isEqualTo(click / 320)
+    assertThat(frames.size).isAtLeast(10 * 50 - 1)
+  }
+
+  @Test
   fun `frames are log-probabilities`() {
     val streaming = StreamingFrames(clickDetector)
     val frames = streaming.accept(FloatArray(3 * 16000) { (it % 97) / 97f })
