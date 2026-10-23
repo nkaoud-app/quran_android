@@ -70,6 +70,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private lateinit var actionButton: Button
   private lateinit var previousButton: Button
   private lateinit var nextButton: Button
+  private lateinit var previousSuraButton: Button
+  private lateinit var nextSuraButton: Button
 
   private data class TrackedWord(val ayah: Int, val text: String)
 
@@ -78,8 +80,12 @@ class RecitationTrackingActivity : AppCompatActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     (application as QuranApplication).applicationComponent.inject(this)
-    sura = (savedInstanceState?.getInt(EXTRA_SURA) ?: intent.getIntExtra(EXTRA_SURA, 1)).coerceIn(1, 114)
-    startAyah = (savedInstanceState?.getInt(EXTRA_AYAH) ?: intent.getIntExtra(EXTRA_AYAH, 1))
+    // Opens where the reader last practised (al-Mulk the first time) unless asked for a place.
+    val last = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+    sura = (savedInstanceState?.getInt(EXTRA_SURA)
+      ?: intent.getIntExtra(EXTRA_SURA, last.getInt(EXTRA_SURA, DEFAULT_SURA))).coerceIn(1, 114)
+    startAyah = (savedInstanceState?.getInt(EXTRA_AYAH)
+      ?: intent.getIntExtra(EXTRA_AYAH, if (sura == last.getInt(EXTRA_SURA, DEFAULT_SURA)) last.getInt(EXTRA_AYAH, 1) else 1))
       .coerceIn(1, quranInfo.getNumberOfAyahs(sura))
     title = getString(R.string.recitation_tracking)
     setContentView(createContent())
@@ -108,6 +114,18 @@ class RecitationTrackingActivity : AppCompatActivity() {
       setPadding(0, padding / 2, 0, 0)
     }
     content.addView(location)
+    val suraNavigation = LinearLayout(this).apply { gravity = Gravity.CENTER }
+    previousSuraButton = Button(this).apply {
+      text = "Previous surah"
+      setOnClickListener { moveSura(-1) }
+    }
+    nextSuraButton = Button(this).apply {
+      text = "Next surah"
+      setOnClickListener { moveSura(1) }
+    }
+    suraNavigation.addView(previousSuraButton)
+    suraNavigation.addView(nextSuraButton)
+    content.addView(suraNavigation)
     val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER }
     previousButton = Button(this).apply {
       text = "Previous ayah"
@@ -148,8 +166,9 @@ class RecitationTrackingActivity : AppCompatActivity() {
     actionButton.isEnabled = false
     status.text = "Loading…"
     location.text = "Surah $sura, starting at ayah $startAyah"
-    previousButton.isEnabled = startAyah > 1
-    nextButton.isEnabled = startAyah < quranInfo.getNumberOfAyahs(sura)
+    updateNavigation()
+    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+      .putInt(EXTRA_SURA, sura).putInt(EXTRA_AYAH, startAyah).apply()
     disposables.clear()
     disposables.add(
       arabicDatabaseUtils.getVerses(SuraAyah(sura, startAyah), SuraAyah(sura, quranInfo.getNumberOfAyahs(sura)))
@@ -169,6 +188,22 @@ class RecitationTrackingActivity : AppCompatActivity() {
           status.text = "Unable to load the ayahs. Download the Arabic Quran data and try again."
         })
     )
+  }
+
+  private fun moveSura(delta: Int) {
+    if (session != null) return
+    sura = (sura + delta).coerceIn(1, 114)
+    startAyah = 1
+    loadText()
+  }
+
+  /** Choosing where to start is only possible while not listening. */
+  private fun updateNavigation() {
+    val idle = session == null
+    previousSuraButton.isEnabled = idle && sura > 1
+    nextSuraButton.isEnabled = idle && sura < 114
+    previousButton.isEnabled = idle && startAyah > 1
+    nextButton.isEnabled = idle && startAyah < quranInfo.getNumberOfAyahs(sura)
   }
 
   private fun moveStart(delta: Int) {
@@ -253,8 +288,6 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private fun start() {
     val trackedWords = words
     val phrases = RecitationTracker.openingPhrases(sura, startAyah)
-    previousButton.isEnabled = false
-    nextButton.isEnabled = false
     status.text = "Loading model…"
     session = scope.launch {
       val error = withContext(Dispatchers.IO) {
@@ -265,6 +298,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
         status.text = "Recitation tracking stopped: ${error.message}"
       }
     }
+    updateNavigation()
     refreshReadiness()
   }
 
@@ -326,8 +360,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private fun stop() {
     session?.cancel()
     session = null
-    previousButton.isEnabled = startAyah > 1
-    nextButton.isEnabled = startAyah < quranInfo.getNumberOfAyahs(sura)
+    updateNavigation()
     refreshReadiness()
     status.text = "Stopped."
   }
@@ -384,6 +417,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
   companion object {
     const val EXTRA_SURA = "extra_sura"
     const val EXTRA_AYAH = "extra_ayah"
+    private const val PREFERENCES = "recitation_tracking"
+    private const val DEFAULT_SURA = 67
     private const val REQUEST_AUDIO = 1002
     private const val SAMPLE_RATE = StreamingFrames.SAMPLE_RATE
     private const val MODEL_NAME = "recitation-s8-int8.onnx"
