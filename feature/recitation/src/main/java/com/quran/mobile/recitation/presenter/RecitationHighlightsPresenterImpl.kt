@@ -19,10 +19,9 @@ import kotlinx.coroutines.flow.onEach
 /**
  * Shows the recitation session on a mushaf page: recited words turn green (orange when the
  * mistake check found them unclear), the word being recited is highlighted, and words not yet
- * recited can be hidden.
+ * recited can be hidden (keeping the ayah numbers).
  *
- * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler); without them,
- * hiding still hides the ayahs not yet started.
+ * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler).
  */
 @QuranPageScope
 class RecitationHighlightsPresenterImpl @Inject constructor(
@@ -67,21 +66,13 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
 
   private fun highlightsFor(progress: MushafRecitationProgress, pages: Set<Int>): List<HighlightInfo> {
     val result = ArrayList<HighlightInfo>()
-    val currentAyah = progress.currentAyah
-    var lastHiddenAyah: SuraAyah? = null
     progress.words.forEachIndexed { index, word ->
       if (progress.pages[index] !in pages) return@forEachIndexed
       val ayah = word.word.ayah
       val position = word.word.wordPosition
       when {
-        progress.hideUnrecited && index >= progress.completed -> {
-          result += highlight(ayah, position, HIDDEN)
-          // Without word coordinates only whole ayahs can be hidden: those not yet started.
-          if (ayah != lastHiddenAyah && ayah != currentAyah && (currentAyah == null || ayah > currentAyah)) {
-            lastHiddenAyah = ayah
-            result += highlight(ayah, -1, HIDDEN)
-          }
-        }
+        // Word by word, so the ayah numbers stay visible as landmarks.
+        progress.hideUnrecited && index >= progress.completed -> result += highlight(ayah, position, HIDDEN)
         index == progress.currentWord -> result += highlight(ayah, position, CURRENT_WORD)
         index < progress.completed ->
           result += highlight(ayah, position, if (index in progress.unclear) UNCLEAR else RECITED)
