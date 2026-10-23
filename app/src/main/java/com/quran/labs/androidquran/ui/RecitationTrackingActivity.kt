@@ -14,6 +14,7 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.InputType
 import android.view.Gravity
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -30,6 +31,8 @@ import com.quran.labs.androidquran.model.translation.ArabicDatabaseUtils
 import com.quran.recitation.tracking.OnnxFrameModel
 import com.quran.recitation.tracking.RecitationTracker
 import com.quran.recitation.tracking.StreamingFrames
+import com.quran.recitation.tracking.WordCheck
+import com.quran.recitation.tracking.WordChecker
 import dev.zacsweers.metro.Inject
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
@@ -63,9 +66,13 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private var sura = 1
   private var startAyah = 1
   private var words = emptyList<TrackedWord>()
+  private var wordChecks = arrayOfNulls<WordCheck>(0)
+  private var unclearThreshold = RecitationTrackingSetting.UNCLEAR.default
 
   private lateinit var location: TextView
   private lateinit var reference: TextView
+  private lateinit var previous: TextView
+  private lateinit var previousSummary: TextView
   private lateinit var status: TextView
   private lateinit var stats: TextView
   private lateinit var actionButton: Button
@@ -141,6 +148,18 @@ class RecitationTrackingActivity : AppCompatActivity() {
     navigation.addView(previousButton)
     navigation.addView(nextButton)
     content.addView(navigation)
+    previous = TextView(this).apply {
+      textSize = 20f
+      gravity = Gravity.CENTER
+      textDirection = TextView.TEXT_DIRECTION_RTL
+      setPadding(0, padding / 2, 0, 0)
+    }
+    content.addView(previous)
+    previousSummary = TextView(this).apply {
+      textSize = 13f
+      gravity = Gravity.CENTER
+    }
+    content.addView(previousSummary)
     reference = TextView(this).apply {
       textSize = 28f
       gravity = Gravity.CENTER
@@ -185,8 +204,9 @@ class RecitationTrackingActivity : AppCompatActivity() {
         textSize = 12f
       })
       val field = EditText(this).apply {
-        inputType = if (setting.wholeNumber) InputType.TYPE_CLASS_NUMBER
-        else InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        inputType = InputType.TYPE_CLASS_NUMBER or
+          (if (setting.wholeNumber) 0 else InputType.TYPE_NUMBER_FLAG_DECIMAL) or
+          (if (setting.min < 0) InputType.TYPE_NUMBER_FLAG_SIGNED else 0)
         setText(setting.format(saved[setting]))
       }
       settingFields[setting] = field
@@ -230,6 +250,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
             ArabicDatabaseUtils.getAyahWithoutBasmallah(verse.sura, verse.ayah, verse.text)
               .split(" ").filter(String::isNotBlank).map { TrackedWord(verse.ayah, it) }
           }
+          wordChecks = arrayOfNulls(words.size)
           if (words.isEmpty()) {
             status.text = "Arabic Quran data is not available. Download it from Quran data settings."
             return@subscribe
@@ -343,6 +364,10 @@ class RecitationTrackingActivity : AppCompatActivity() {
     val trackedWords = words
     val phrases = RecitationTracker.openingPhrases(sura, startAyah)
     val settings = readSettings()
+    unclearThreshold = settings.unclearThreshold
+    wordChecks = arrayOfNulls(words.size)
+    // Keep the screen on while listening; cleared again in stop().
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     status.text = "Loading model…"
     session = scope.launch {
       val error = withContext(Dispatchers.IO) {
@@ -365,6 +390,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
     settings: RecitationTrackingSettings,
   ) = coroutineScope {
     val tracker = RecitationTracker(trackedWords, settings.tracker, phrases)
+    val checker = WordChecker(tracker, trackedWords)
     OnnxFrameModel(modelFile, settings.threads).use { model ->
       val streaming = StreamingFrames(model, settings.streaming)
       val bufferSize = maxOf(
@@ -395,15 +421,18 @@ class RecitationTrackingActivity : AppCompatActivity() {
           if (newFrames.isEmpty()) continue
           modelNanos += System.nanoTime() - started
           modelAudio += streaming.processedSamples - processedBefore
+          val checked = ArrayList<Pair<Int, WordCheck>>()
           for (frame in newFrames) {
             tracker.push(frame)
             if (++frames % 500 == 0) tracker.renormalize()
+            for (w in checker.push(frame)) checked += w to requireNotNull(checker.check(w))
           }
           val msPerSecond = modelNanos / 1e6 / (modelAudio / SAMPLE_RATE.toDouble())
           val waiting = (streaming.receivedSamples - streaming.processedSamples) / SAMPLE_RATE.toDouble()
           val completed = tracker.completed
           val current = tracker.currentWord
           withContext(Dispatchers.Main) {
+            for ((w, check) in checked) if (w < wordChecks.size) wordChecks[w] = check
             render(completed, current)
             stats.text = "Model: %.0f ms per second of audio (%.2fx real time). Audio waiting: %.1f s."
               .format(msPerSecond, msPerSecond / 1000, waiting)
@@ -419,6 +448,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private fun stop() {
     session?.cancel()
     session = null
+    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     updateNavigation()
     refreshReadiness()
     status.text = "Stopped."
@@ -426,15 +456,29 @@ class RecitationTrackingActivity : AppCompatActivity() {
 
   /**
    * Shows the ayah of the first word not yet recited, so the display moves on by itself once an
-   * ayah is finished. Recited words are green; the word being recited is highlighted.
+   * ayah is finished, with the ayah before it underneath it to see how it went. Recited words are
+   * green, or amber when the mistake check found them unclear; the word being recited is
+   * highlighted.
    */
   private fun render(completed: Int, current: Int) {
     if (words.isEmpty()) return
-    if (completed >= words.size) {
-      reference.text = "Surah complete."
-      return
+    val ayah = words.getOrNull(completed)?.ayah
+    reference.text = if (ayah == null) "Surah complete." else ayahText(ayah, completed, current)
+    val previousAyah = (ayah ?: (words.last().ayah + 1)) - 1
+    val previousWords = words.indices.filter { words[it].ayah == previousAyah }
+    if (previousWords.isEmpty()) {
+      previous.text = ""
+      previousSummary.text = ""
+    } else {
+      previous.text = ayahText(previousAyah, completed, current = -1)
+      previousSummary.text = summary(previousAyah, previousWords)
     }
-    val ayah = words[completed].ayah
+    if (ayah != null) location.text = "Surah $sura, ayah $ayah"
+  }
+
+  private fun isUnclear(word: Int): Boolean = (wordChecks.getOrNull(word)?.deficit ?: 0.0) < unclearThreshold
+
+  private fun ayahText(ayah: Int, completed: Int, current: Int): CharSequence {
     val text = SpannableStringBuilder()
     words.forEachIndexed { index, word ->
       if (word.ayah != ayah) return@forEachIndexed
@@ -442,14 +486,27 @@ class RecitationTrackingActivity : AppCompatActivity() {
       val start = text.length
       text.append(word.text)
       if (index < completed) {
-        text.setSpan(ForegroundColorSpan(RECITED), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val color = if (isUnclear(index)) UNCLEAR else RECITED
+        text.setSpan(ForegroundColorSpan(color), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
       }
       if (index == current) {
         text.setSpan(BackgroundColorSpan(CURRENT), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
       }
     }
-    reference.text = text
-    location.text = "Surah $sura, ayah $ayah"
+    return text
+  }
+
+  /** e.g. "Ayah 5: all 12 words clear" or "Ayah 5: 1 unclear word: وَجَعَلۡنَٰهَا (و)". */
+  private fun summary(ayah: Int, ayahWords: List<Int>): String {
+    val unclear = ayahWords.filter(::isUnclear)
+    if (unclear.isEmpty()) return "Ayah $ayah: all ${ayahWords.size} words clear"
+    val details = unclear.joinToString("، ") { w ->
+      val check = wordChecks[w]
+      val letters = WordChecker.spokenLetters(words[w].text)
+      val letter = check?.let { letters.getOrNull(it.worstLetter)?.letter }
+      if (letter != null) "${words[w].text} ($letter)" else words[w].text
+    }
+    return "Ayah $ayah: ${unclear.size} unclear word${if (unclear.size > 1) "s" else ""}: $details"
   }
 
   override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -485,5 +542,6 @@ class RecitationTrackingActivity : AppCompatActivity() {
       "https://github.com/nkaoud-app/quran_android/releases/download/recitation-model-v1/$MODEL_NAME"
     private val RECITED = Color.rgb(0x2E, 0x7D, 0x32)
     private val CURRENT = Color.argb(0x66, 0xFF, 0xC1, 0x07)
+    private val UNCLEAR = Color.rgb(0xE6, 0x51, 0x00)
   }
 }

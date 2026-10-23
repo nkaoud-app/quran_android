@@ -123,6 +123,9 @@ class RecitationTracker:
     self.emission_class = np.zeros(self.n_states, dtype=int)
     self.emission_class[1::2] = tokens
     self.last_state_of_word = np.array(last_state_of_word)
+    # Letter (token) states of each word, for checking what was heard.
+    starts = [text_start] + last_state_of_word[:-1]
+    self.letters_of_word = [list(range(start + 1, end, 2)) for start, end in zip(starts, last_state_of_word)]
     # Where reciting a word starts: the blank before its first letter, and that letter.
     starts = [text_start] + last_state_of_word[:-1]
     self.word_starts = np.array(
@@ -144,6 +147,8 @@ class RecitationTracker:
     ]
 
     self.delta = np.full(self.n_states, -np.inf)
+    # Best log-probability the model gave each expected letter while the tracker was on it.
+    self.letter_evidence = np.full(self.n_states, -np.inf)
     self.filler = 0.0
     self.frames = 0
     self.completed = 0  # number of words recited so far
@@ -183,6 +188,8 @@ class RecitationTracker:
     if self.filler > self.delta[position] or position < self.text_start:
       return self.completed  # still before the text
     self.current_word = int(np.searchsorted(self.last_state_of_word, position, side="right"))
+    if position % 2 == 1:
+      self.letter_evidence[position] = max(self.letter_evidence[position], frame_scores[self.emission_class[position]])
     target = self.completed
     while target < len(self.last_state_of_word) and position >= self.last_state_of_word[target]:
       target += 1
@@ -194,6 +201,10 @@ class RecitationTracker:
     else:
       self._stable = 0
     return self.completed
+
+  def word_evidence(self, word: int) -> list[float]:
+    """Per letter of `word`: the best log-probability the model gave it (-inf if never on it)."""
+    return [float(self.letter_evidence[s]) for s in self.letters_of_word[word]]
 
   def renormalize(self) -> None:
     """Keeps scores in a numerically comfortable range on long recitations."""

@@ -49,6 +49,11 @@ enum class RecitationTrackingSetting(
     "Higher starts following sooner; lower ignores more sound before you begin reciting.",
     1.5, 0.0, 10.0,
   ),
+  UNCLEAR(
+    "Unclear word threshold",
+    "Recited words scoring below this are marked unclear (possible mistake). Closer to 0 marks more words; in testing about 2% of correctly recited words scored below -8.",
+    -8.0, -30.0, 0.0,
+  ),
   THREADS(
     "Processor threads",
     "CPU cores the model may use at once.",
@@ -88,6 +93,8 @@ class RecitationTrackingSettings(private val values: Map<RecitationTrackingSetti
     )
 
   val threads: Int get() = this[RecitationTrackingSetting.THREADS].toInt()
+
+  val unclearThreshold: Double get() = this[RecitationTrackingSetting.UNCLEAR]
 
   fun save(preferences: SharedPreferences) {
     preferences.edit().apply {
