@@ -7,11 +7,11 @@ import java.nio.ByteOrder
 
 class WordCheckerTest {
 
-  private fun resource(name: String): ByteArray =
-    requireNotNull(javaClass.classLoader?.getResourceAsStream("tracker-fixture/$name")) { name }
+  private fun resource(fixture: String, name: String): ByteArray =
+    requireNotNull(javaClass.classLoader?.getResourceAsStream("$fixture/$name")) { "$fixture/$name" }
       .use { it.readBytes() }
 
-  private fun lines(name: String) = resource(name).decodeToString().trim().lines()
+  private fun lines(fixture: String, name: String) = resource(fixture, name).decodeToString().trim().lines()
 
   private fun spoken(word: String) =
     WordChecker.spokenLetters(word).joinToString(" ") { if (it.optional) "(${it.letter})" else "${it.letter}" }
@@ -36,13 +36,30 @@ class WordCheckerTest {
   /** Word checks for Minshawi's al-Fatiha must match the Python spike (spike/mistakes.py). */
   @Test
   fun `checks al-Fatiha exactly like the Python checker`() {
-    val words = lines("words.txt")
-    val phrases = lines("phrases.txt").map { it.split(" ") }
-    val expected = lines("deficits.txt").map { line ->
+    replayAndCompare("tracker-fixture")
+  }
+
+  /**
+   * Minshawi's al-Mulk 1-3, edited: ayah 2 with its third word replaced by another word's audio,
+   * then ayah 2 again correctly, then ayah 3. The word is unclear at first and clear after the
+   * repeat, exactly as in the Python checker.
+   */
+  @Test
+  fun `a word recited again correctly becomes clear`() {
+    val checker = replayAndCompare("tracker-fixture-repeat")
+    val words = lines("tracker-fixture-repeat", "words.txt")
+    val replaced = words.indexOf("ٱلۡمَوۡتَ")
+    assertThat(checker.check(replaced)!!.deficit).isWithin(1e-6).of(0.0)
+  }
+
+  private fun replayAndCompare(fixture: String): WordChecker {
+    val words = lines(fixture, "words.txt")
+    val phrases = lines(fixture, "phrases.txt").map { it.split(" ") }
+    val expected = lines(fixture, "deficits.txt").map { line ->
       val (deficit, worst) = line.split(" ")
       deficit.toDouble() to worst.toInt()
     }
-    val buffer = ByteBuffer.wrap(resource("frames.bin")).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+    val buffer = ByteBuffer.wrap(resource(fixture, "frames.bin")).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
     val tracker = RecitationTracker(words, TrackerConfig(), phrases)
     val checker = WordChecker(tracker, words)
 
@@ -61,5 +78,6 @@ class WordCheckerTest {
       assertThat(check.deficit).isWithin(1e-6).of(deficit)
       if (deficit < -1e-9) assertThat(check.worstLetter).isEqualTo(worst)
     }
+    return checker
   }
 }

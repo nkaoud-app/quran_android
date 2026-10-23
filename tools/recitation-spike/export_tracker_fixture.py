@@ -1,6 +1,7 @@
 """Writes a test fixture so the Kotlin tracker can be checked against this Python one.
 
-  python export_tracker_fixture.py MODEL.onnx OUT_DIR [--sura 1]
+  python export_tracker_fixture.py MODEL.onnx OUT_DIR [--sura 1] [--ayahs FIRST LAST]
+      [--audio recording.f32]   # 16 kHz float32; default: Minshawi's recitation of the sura
 
 OUT_DIR/frames.bin holds the streaming model's per-frame class log-probabilities for the sura
 (little-endian float32, frames x classes). Plain text files hold the words (one per line), the
@@ -24,14 +25,18 @@ def main():
   parser.add_argument("model")
   parser.add_argument("out")
   parser.add_argument("--sura", type=int, default=1)
+  parser.add_argument("--ayahs", type=int, nargs=2)
+  parser.add_argument("--audio", help="raw 16 kHz float32 audio instead of Minshawi's recitation")
   args = parser.parse_args()
 
   model = AcousticModel(args.model)
   streaming = StreamingConfig(hop_seconds=1.0, context_seconds=3.0, lookahead_seconds=1.0)
-  frames = model.streaming_log_probs(sura_audio(args.sura), streaming).astype(np.float32)
+  audio = np.fromfile(args.audio, dtype=np.float32) if args.audio else sura_audio(args.sura)
+  frames = model.streaming_log_probs(audio, streaming).astype(np.float32)
   scores = SkeletonScores(model.vocab, model.blank_id)
-  words = [w.text for w in sura_words(args.sura)]
-  phrases = opening_phrases(args.sura)
+  first, last = args.ayahs or (1, 10_000)
+  words = [w.text for w in sura_words(args.sura) if first <= w.ayah <= last]
+  phrases = opening_phrases(args.sura, first)
   config = TrackerConfig()
   tracker = RecitationTracker(words, scores, config, optional_phrases=phrases)
 

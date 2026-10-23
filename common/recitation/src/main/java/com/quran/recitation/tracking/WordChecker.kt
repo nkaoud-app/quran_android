@@ -19,6 +19,9 @@ data class WordCheck(
  * letters as pronounced. The difference is the word's deficit. The phone model sometimes mishears
  * a letter in correct recitation, so a low deficit means "unclear", not a certain mistake.
  *
+ * When the reader goes back over checked words, each is checked again as the reader passes it and
+ * keeps its better attempt, so a word said wrong and then recited again correctly ends up clear.
+ *
  * This is a port of tools/recitation-spike/spike/mistakes.py and must stay in step with it.
  */
 class WordChecker(
@@ -31,6 +34,9 @@ class WordChecker(
   private var reachedCount = 0
   private val checks = arrayOfNulls<WordCheck>(words.size)
   private var checkedCount = 0
+  // Checked word -> frame the reader went back to (or before) it; -1 when not being recited again.
+  private val revisitStart = IntArray(words.size) { -1 }
+  private var revisiting = 0
 
   // Frames from absolute index `firstFrame` onwards; older ones are no longer needed.
   private val frames = ArrayDeque<FloatArray>()
@@ -41,33 +47,61 @@ class WordChecker(
 
   fun spokenLetters(word: Int): List<SpokenLetter> = spoken[word]
 
-  /** Call with each frame right after the tracker consumed it; returns the words checked now. */
-  fun push(frame: FloatArray): IntRange {
+  /** Call with each frame right after the tracker consumed it; returns the words (re)checked now. */
+  fun push(frame: FloatArray): List<Int> {
     val i = frameCount++
     frames.addLast(frame)
     val reachedUpTo = minOf(tracker.currentWord, spoken.size - 1)
     while (reachedCount <= reachedUpTo) reached[reachedCount++] = i
 
-    val firstChecked = checkedCount
+    val checked = ArrayList<Int>()
     while (checkedCount < tracker.completed) {
       val w = checkedCount++
       if (reachedCount <= w) reached[reachedCount++] = i
-      val letters = spoken[w]
-      checks[w] = if (letters.isEmpty()) {
-        WordCheck(0.0, 0)
-      } else {
-        val from = maxOf(0, reached[w] - MARGIN)
-        val span = (from..i).map { frames[it - firstFrame] }
-        wordDeficit(span, letters, skipPenalty)
+      checks[w] = score(w, reached[w], i)
+      checked += w
+    }
+
+    // Going back: checked words at or after the reader's position are being recited again.
+    val current = tracker.currentWord
+    for (w in current until checkedCount) {
+      if (revisitStart[w] < 0) {
+        revisitStart[w] = i
+        revisiting++
       }
     }
-    // Keep only what the next word to check may still need.
-    val keepFrom = (if (checkedCount < reachedCount) reached[checkedCount] else i) - MARGIN
+    var oldestRevisit = Int.MAX_VALUE
+    if (revisiting > 0) {
+      for (w in 0 until checkedCount) {
+        val start = revisitStart[w]
+        if (start < 0) continue
+        if (current > w) { // passed it again
+          revisitStart[w] = -1
+          revisiting--
+          val again = score(w, start, i)
+          if (again.deficit > checks[w]!!.deficit) checks[w] = again
+          checked += w
+        } else {
+          oldestRevisit = minOf(oldestRevisit, start)
+        }
+      }
+    }
+
+    // Keep only what the words still to be (re)checked may need.
+    val nextStart = if (checkedCount < reachedCount) reached[checkedCount] else i
+    val keepFrom = minOf(nextStart, oldestRevisit) - MARGIN
     while (firstFrame < keepFrom && frames.isNotEmpty()) {
       frames.removeFirst()
       firstFrame++
     }
-    return firstChecked until checkedCount
+    return checked
+  }
+
+  private fun score(word: Int, start: Int, end: Int): WordCheck {
+    val letters = spoken[word]
+    if (letters.isEmpty()) return WordCheck(0.0, 0)
+    val span = (maxOf(0, start - MARGIN)..end).map { frames[it - firstFrame] }
+    return wordDeficit(span, letters, skipPenalty)
   }
 
   companion object {

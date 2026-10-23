@@ -126,7 +126,9 @@ class WordChecker:
   """Scores each word as the tracker confirms it, from the frames it spent reaching it.
 
   Feed it every frame right after the tracker has consumed it. `deficits[w]` is (deficit, worst
-  letter index) once word w is confirmed.
+  letter index) once word w is confirmed. When the reader goes back over checked words, each is
+  checked again as the reader passes it and keeps its better attempt, so a word said wrong and
+  then recited again correctly ends up clear.
   """
 
   MARGIN = 30  # frames before the tracker reached a word that still count as the word's audio
@@ -138,9 +140,17 @@ class WordChecker:
     self.frames = []
     self.reached = {}
     self.deficits = {}
+    self.revisited = {}  # checked word -> frame the reader went back to (or before) it
+
+  def _score(self, w, start, i):
+    spoken = self.spoken[w]
+    if not spoken:
+      return (0.0, 0)
+    span = np.array(self.frames[max(0, start - self.MARGIN):i + 1])
+    return word_deficit(span, [t for t, _ in spoken], self.skip_penalty, [o for _, o in spoken])
 
   def push(self, frame) -> list[int]:
-    """Returns the words confirmed (and scored) with this frame."""
+    """Returns the words checked (or checked again) with this frame."""
     i = len(self.frames)
     self.frames.append(frame)
     for w in range(len(self.reached), min(self.tracker.current_word, len(self.spoken) - 1) + 1):
@@ -148,12 +158,16 @@ class WordChecker:
     scored = []
     for w in range(len(self.deficits), self.tracker.completed):
       self.reached.setdefault(w, i)
-      spoken = self.spoken[w]
-      if spoken:
-        span = np.array(self.frames[max(0, self.reached[w] - self.MARGIN):i + 1])
-        self.deficits[w] = word_deficit(span, [t for t, _ in spoken], self.skip_penalty,
-                                        [o for _, o in spoken])
-      else:
-        self.deficits[w] = (0.0, 0)
+      self.deficits[w] = self._score(w, self.reached[w], i)
       scored.append(w)
+    # Going back: checked words at or after the reader's position are being recited again.
+    current = self.tracker.current_word
+    for w in range(current, len(self.deficits)):
+      self.revisited.setdefault(w, i)
+    for w in sorted(self.revisited):
+      if current > w:  # passed it again
+        again = self._score(w, self.revisited.pop(w), i)
+        if again[0] > self.deficits[w][0]:
+          self.deficits[w] = again
+        scored.append(w)
     return scored
