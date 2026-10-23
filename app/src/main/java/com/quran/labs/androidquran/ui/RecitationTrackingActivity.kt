@@ -4,9 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -28,9 +25,11 @@ import com.quran.data.model.SuraAyah
 import com.quran.labs.androidquran.QuranApplication
 import com.quran.labs.androidquran.R
 import com.quran.labs.androidquran.model.translation.ArabicDatabaseUtils
-import com.quran.recitation.tracking.OnnxFrameModel
+import com.quran.recitation.tracking.LiveRecitation
+import com.quran.recitation.tracking.RecitationModel
 import com.quran.recitation.tracking.RecitationTracker
-import com.quran.recitation.tracking.StreamingFrames
+import com.quran.recitation.tracking.RecitationTrackingSetting
+import com.quran.recitation.tracking.RecitationTrackingSettings
 import com.quran.recitation.tracking.WordCheck
 import com.quran.recitation.tracking.WordChecker
 import dev.zacsweers.metro.Inject
@@ -42,13 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.File
 
 /**
  * Milestone 2 recitation tracking: an on-device Quran recitation model follows the reader through
@@ -85,13 +78,11 @@ class RecitationTrackingActivity : AppCompatActivity() {
 
   private data class TrackedWord(val ayah: Int, val text: String)
 
-  private val modelFile: File get() = File(filesDir, "recitation/$MODEL_NAME")
-
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     (application as QuranApplication).applicationComponent.inject(this)
     // Opens where the reader last practised (al-Mulk the first time) unless asked for a place.
-    val last = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+    val last = getSharedPreferences(RecitationTrackingSettings.PREFERENCES, MODE_PRIVATE)
     sura = (savedInstanceState?.getInt(EXTRA_SURA)
       ?: intent.getIntExtra(EXTRA_SURA, last.getInt(EXTRA_SURA, DEFAULT_SURA))).coerceIn(1, 114)
     startAyah = (savedInstanceState?.getInt(EXTRA_AYAH)
@@ -191,7 +182,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
       textSize = 18f
       setPadding(0, padding, 0, 0)
     })
-    val saved = RecitationTrackingSettings.load(getSharedPreferences(PREFERENCES, MODE_PRIVATE))
+    val saved = RecitationTrackingSettings.load(getSharedPreferences(RecitationTrackingSettings.PREFERENCES, MODE_PRIVATE))
     RecitationTrackingSetting.entries.forEach { setting ->
       content.addView(TextView(this).apply {
         text = "${setting.label}  (default ${setting.format(setting.default)}, " +
@@ -229,7 +220,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
       }
     )
     settingFields.forEach { (setting, field) -> field.setText(setting.format(settings[setting])) }
-    settings.save(getSharedPreferences(PREFERENCES, MODE_PRIVATE))
+    settings.save(getSharedPreferences(RecitationTrackingSettings.PREFERENCES, MODE_PRIVATE))
     return settings
   }
 
@@ -239,7 +230,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
     status.text = "Loading…"
     location.text = "Surah $sura, starting at ayah $startAyah"
     updateNavigation()
-    getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
+    getSharedPreferences(RecitationTrackingSettings.PREFERENCES, MODE_PRIVATE).edit()
       .putInt(EXTRA_SURA, sura).putInt(EXTRA_AYAH, startAyah).apply()
     disposables.clear()
     disposables.add(
@@ -291,12 +282,12 @@ class RecitationTrackingActivity : AppCompatActivity() {
     actionButton.isEnabled = words.isNotEmpty() && download == null
     when {
       session != null -> actionButton.text = "Stop"
-      modelFile.exists() -> {
+      RecitationModel.isDownloaded(this) -> {
         actionButton.text = "Start"
         status.text = "Ready. Tap Start and recite from ayah $startAyah."
       }
       else -> {
-        actionButton.text = "Download model (93 MB)"
+        actionButton.text = "Download model (${RecitationModel.DOWNLOAD_SIZE})"
         status.text = "The recitation model is not downloaded yet."
       }
     }
@@ -305,7 +296,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
   private fun onAction() {
     when {
       session != null -> stop()
-      !modelFile.exists() -> downloadModel()
+      !RecitationModel.isDownloaded(this) -> downloadModel()
       ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
         PackageManager.PERMISSION_GRANTED ->
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
@@ -318,36 +309,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
     download = scope.launch {
       var failure: String? = null
       try {
-        withContext(Dispatchers.IO) {
-          val partial = File(modelFile.path + ".part")
-          partial.parentFile?.mkdirs()
-          OkHttpClient().newCall(Request.Builder().url(MODEL_URL).build()).execute().use { response ->
-            check(response.isSuccessful) { "HTTP ${response.code}" }
-            val body = requireNotNull(response.body)
-            val total = body.contentLength()
-            body.byteStream().use { input ->
-              partial.outputStream().use { output ->
-                val buffer = ByteArray(64 * 1024)
-                var done = 0L
-                var lastShown = -1L
-                while (true) {
-                  ensureActive()
-                  val read = input.read(buffer)
-                  if (read < 0) break
-                  output.write(buffer, 0, read)
-                  done += read
-                  val percent = if (total > 0) done * 100 / total else -1
-                  if (percent != lastShown) {
-                    lastShown = percent
-                    withContext(Dispatchers.Main) {
-                      status.text = if (percent >= 0) "Downloading model… $percent%" else "Downloading model… ${done / 1_000_000} MB"
-                    }
-                  }
-                }
-              }
-            }
-          }
-          check(partial.renameTo(modelFile)) { "Could not save the model" }
+        RecitationModel.download(this@RecitationTrackingActivity) { percent, bytes ->
+          status.text = if (percent >= 0) "Downloading model… $percent%" else "Downloading model… ${bytes / 1_000_000} MB"
         }
       } catch (e: Exception) {
         if (e is CancellationException) throw e
@@ -370,9 +333,7 @@ class RecitationTrackingActivity : AppCompatActivity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     status.text = "Loading model…"
     session = scope.launch {
-      val error = withContext(Dispatchers.IO) {
-        runCatching { listen(trackedWords.map { it.text }, phrases, settings) }.exceptionOrNull()
-      }
+      val error = runCatching { listen(trackedWords.map { it.text }, phrases, settings) }.exceptionOrNull()
       if (error != null && error !is CancellationException) {
         stop()
         status.text = "Recitation tracking stopped: ${error.message}"
@@ -388,61 +349,16 @@ class RecitationTrackingActivity : AppCompatActivity() {
     trackedWords: List<String>,
     phrases: List<List<String>>,
     settings: RecitationTrackingSettings,
-  ) = coroutineScope {
-    val tracker = RecitationTracker(trackedWords, settings.tracker, phrases)
-    val checker = WordChecker(tracker, trackedWords)
-    OnnxFrameModel(modelFile, settings.threads).use { model ->
-      val streaming = StreamingFrames(model, settings.streaming)
-      val bufferSize = maxOf(
-        AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),
-        SAMPLE_RATE * 2 * 4, // 4 s of audio, so a slow model call does not drop audio
-      )
-      val recorder = AudioRecord(
-        MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_16BIT, bufferSize,
-      )
-      try {
-        check(recorder.state == AudioRecord.STATE_INITIALIZED) { "microphone unavailable" }
-        recorder.startRecording()
-        withContext(Dispatchers.Main) { status.text = "Listening… recite from ayah $startAyah." }
-        val pcm = ShortArray(SAMPLE_RATE / 10)
-        val samples = FloatArray(pcm.size)
-        var frames = 0
-        var modelNanos = 0L
-        var modelAudio = 0L
-        while (true) {
-          ensureActive()
-          val read = recorder.read(pcm, 0, pcm.size)
-          if (read <= 0) continue
-          for (i in 0 until read) samples[i] = pcm[i] / 32768f
-          val processedBefore = streaming.processedSamples
-          val started = System.nanoTime()
-          val newFrames = streaming.accept(samples, read)
-          if (newFrames.isEmpty()) continue
-          modelNanos += System.nanoTime() - started
-          modelAudio += streaming.processedSamples - processedBefore
-          val checked = ArrayList<Pair<Int, WordCheck>>()
-          for (frame in newFrames) {
-            tracker.push(frame)
-            if (++frames % 500 == 0) tracker.renormalize()
-            for (w in checker.push(frame)) checked += w to requireNotNull(checker.check(w))
-          }
-          val msPerSecond = modelNanos / 1e6 / (modelAudio / SAMPLE_RATE.toDouble())
-          val waiting = (streaming.receivedSamples - streaming.processedSamples) / SAMPLE_RATE.toDouble()
-          val completed = tracker.completed
-          val current = tracker.currentWord
-          withContext(Dispatchers.Main) {
-            for ((w, check) in checked) if (w < wordChecks.size) wordChecks[w] = check
-            render(completed, current)
-            stats.text = "Model: %.0f ms per second of audio (%.2fx real time). Audio waiting: %.1f s."
-              .format(msPerSecond, msPerSecond / 1000, waiting)
-          }
-        }
-      } finally {
-        if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
-        recorder.release()
-      }
-    }
+  ) {
+    LiveRecitation(trackedWords, phrases, settings, RecitationModel.file(this)).run(
+      onListening = { status.text = "Listening… recite from ayah $startAyah." },
+      onUpdate = { update ->
+        for ((w, check) in update.checked) if (w < wordChecks.size) wordChecks[w] = check
+        render(update.completed, update.currentWord)
+        stats.text = "Model: %.0f ms per second of audio (%.2fx real time). Audio waiting: %.1f s."
+          .format(update.modelMsPerSecond, update.modelMsPerSecond / 1000, update.waitingSeconds)
+      },
+    )
   }
 
   private fun stop() {
@@ -533,13 +449,8 @@ class RecitationTrackingActivity : AppCompatActivity() {
   companion object {
     const val EXTRA_SURA = "extra_sura"
     const val EXTRA_AYAH = "extra_ayah"
-    private const val PREFERENCES = "recitation_tracking"
     private const val DEFAULT_SURA = 67
     private const val REQUEST_AUDIO = 1002
-    private const val SAMPLE_RATE = StreamingFrames.SAMPLE_RATE
-    private const val MODEL_NAME = "recitation-s8-int8.onnx"
-    private const val MODEL_URL =
-      "https://github.com/nkaoud-app/quran_android/releases/download/recitation-model-v1/$MODEL_NAME"
     private val RECITED = Color.rgb(0x2E, 0x7D, 0x32)
     private val CURRENT = Color.argb(0x66, 0xFF, 0xC1, 0x07)
     private val UNCLEAR = Color.rgb(0xE6, 0x51, 0x00)

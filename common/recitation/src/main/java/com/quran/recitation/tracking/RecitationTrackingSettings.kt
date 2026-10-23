@@ -1,11 +1,9 @@
-package com.quran.labs.androidquran.ui
+package com.quran.recitation.tracking
 
 import android.content.SharedPreferences
-import com.quran.recitation.tracking.StreamingConfig
-import com.quran.recitation.tracking.TrackerConfig
 import java.util.Locale
 
-/** A tunable recitation tracking setting, shown on the tracking screen for testing. */
+/** A tunable recitation tracking setting, shown on the tracking screen for testing and used wherever recitation is followed. */
 enum class RecitationTrackingSetting(
   val label: String,
   val explanation: String,
@@ -108,6 +106,9 @@ class RecitationTrackingSettings(private val values: Map<RecitationTrackingSetti
         it.clamp(preferences.getFloat(it.key, it.default.toFloat()).toDouble())
       }
     )
+
+    /** Shared preferences the settings (and the tracking screen's place) are kept in. */
+    const val PREFERENCES = "recitation_tracking"
 
     val defaults = RecitationTrackingSettings(RecitationTrackingSetting.entries.associateWith { it.default })
   }

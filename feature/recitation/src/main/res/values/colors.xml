@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- recitation on the mushaf pages: text colors of recited words, highlights of where the reader is -->
+  <color name="recitation_recited">#FF2E7D32</color>
+  <color name="recitation_recited_night">#FF81C784</color>
+  <color name="recitation_unclear">#FFE65100</color>
+  <color name="recitation_unclear_night">#FFFFB74D</color>
+  <color name="recitation_current_word">#66FFC107</color>
+  <color name="recitation_current_ayah">#1FFFC107</color>
+  <color name="recitation_hidden">#00000000</color>
+</resources>

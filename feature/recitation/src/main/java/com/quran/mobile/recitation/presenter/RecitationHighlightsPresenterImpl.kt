@@ -1,14 +1,120 @@
 package com.quran.mobile.recitation.presenter
 
 import com.quran.data.di.QuranPageScope
+import com.quran.data.model.SuraAyah
+import com.quran.data.model.highlight.HighlightInfo
+import com.quran.data.model.highlight.HighlightType
+import com.quran.data.model.highlight.HighlightType.Mode
+import com.quran.mobile.recitation.R
 import com.quran.recitation.presenter.RecitationHighlightsPresenter
+import com.quran.recitation.presenter.RecitationHighlightsPresenter.HighlightAction
 import com.quran.recitation.presenter.RecitationHighlightsPresenter.RecitationPage
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 
+/**
+ * Shows the recitation session on a mushaf page: recited words turn green (orange when the
+ * mistake check found them unclear), the word being recited and its ayah are highlighted, and
+ * words not yet recited can be hidden.
+ *
+ * Word highlights need the page's word coordinates; on pages without them only the ayah being
+ * recited (and, when hiding, the ayahs not yet started) show.
+ */
 @QuranPageScope
-class RecitationHighlightsPresenterImpl @Inject constructor(): RecitationHighlightsPresenter {
-  override fun bind(what: RecitationPage) {}
-  override fun unbind(what: RecitationPage) {}
+class RecitationHighlightsPresenterImpl @Inject constructor(
+  private val state: MushafRecitationState,
+) : RecitationHighlightsPresenter {
+  private var page: RecitationPage? = null
+  private var scope: CoroutineScope? = null
+  private var shown: List<HighlightInfo> = emptyList()
 
-  override fun refresh() {}
+  override fun bind(what: RecitationPage) {
+    page = what
+    shown = emptyList()
+    scope = MainScope().also { scope ->
+      state.progress.onEach { show(it, force = false) }.launchIn(scope)
+    }
+  }
+
+  override fun unbind(what: RecitationPage) {
+    scope?.cancel()
+    scope = null
+    page = null
+  }
+
+  /** Called once the page's coordinates are loaded, so highlights can be drawn. */
+  override fun refresh() {
+    show(state.progress.value, force = true)
+  }
+
+  private fun show(progress: MushafRecitationProgress?, force: Boolean) {
+    val page = page ?: return
+    val highlights = progress?.let { highlightsFor(it, page.pageNumbers) }.orEmpty()
+    // Most updates change nothing on a given page (the reader is on another one).
+    if (!force && highlights.sameAs(shown)) return
+    shown = highlights
+    page.applyHighlights(
+      buildList<HighlightAction> {
+        TYPES.forEach { add(HighlightAction.UnhighlightAll(it)) }
+        highlights.forEach { add(HighlightAction.Highlight(it)) }
+      }
+    )
+  }
+
+  private fun highlightsFor(progress: MushafRecitationProgress, pages: Set<Int>): List<HighlightInfo> {
+    val result = ArrayList<HighlightInfo>()
+    val currentAyah = progress.currentAyah
+    if (currentAyah != null && progress.pages[progress.indexOf(currentAyah)] in pages) {
+      result += highlight(currentAyah, -1, CURRENT_AYAH)
+    }
+    var lastHiddenAyah: SuraAyah? = null
+    progress.words.forEachIndexed { index, word ->
+      if (progress.pages[index] !in pages) return@forEachIndexed
+      val ayah = word.word.ayah
+      val position = word.word.wordPosition
+      when {
+        progress.hideUnrecited && index >= progress.completed -> {
+          result += highlight(ayah, position, HIDDEN)
+          // Without word coordinates only whole ayahs can be hidden: those not yet started.
+          if (ayah != lastHiddenAyah && ayah != currentAyah && (currentAyah == null || ayah > currentAyah)) {
+            lastHiddenAyah = ayah
+            result += highlight(ayah, -1, HIDDEN)
+          }
+        }
+        index == progress.currentWord -> result += highlight(ayah, position, CURRENT_WORD)
+        index < progress.completed ->
+          result += highlight(ayah, position, if (index in progress.unclear) UNCLEAR else RECITED)
+      }
+    }
+    return result
+  }
+
+  private fun highlight(ayah: SuraAyah, word: Int, type: HighlightType) =
+    HighlightInfo(ayah.sura, ayah.ayah, word, type, scrollToAyah = false)
+
+  private fun List<HighlightInfo>.sameAs(other: List<HighlightInfo>): Boolean =
+    size == other.size && indices.all { i ->
+      val a = this[i]
+      val b = other[i]
+      a.sura == b.sura && a.ayah == b.ayah && a.word == b.word && a.highlightType == b.highlightType
+    }
+
+  companion object {
+    // Ids after the app's own highlight types (selection, audio, bookmarks, colors, reading bookmarks).
+    val CURRENT_AYAH = HighlightType(40, R.color.recitation_current_ayah, Mode.UNDERLAY)
+    val RECITED = HighlightType(
+      41, R.color.recitation_recited, Mode.COLOR, nightColorResId = R.color.recitation_recited_night,
+    )
+    val UNCLEAR = HighlightType(
+      42, R.color.recitation_unclear, Mode.COLOR, nightColorResId = R.color.recitation_unclear_night,
+    )
+    val HIDDEN = HighlightType(43, R.color.recitation_hidden, Mode.HIDE)
+    val CURRENT_WORD = HighlightType(44, R.color.recitation_current_word, Mode.HIGHLIGHT)
+
+    private val TYPES = listOf(CURRENT_AYAH, RECITED, UNCLEAR, HIDDEN, CURRENT_WORD)
+  }
 }
