@@ -20,7 +20,11 @@ data class WordCheck(
  * a letter in correct recitation, so a low deficit means "unclear", not a certain mistake.
  *
  * When the reader goes back over checked words, each is checked again as the reader passes it and
- * keeps its better attempt, so a word said wrong and then recited again correctly ends up clear.
+ * keeps its latest attempt, so a word said wrong and then recited again correctly ends up clear
+ * (and the other way round). The tracker's position can flicker back a word for a moment without
+ * the reader going back, so a return counts as an attempt only if it lasted [MIN_REVISIT] frames
+ * or jumped back at least [MIN_JUMP] words (the tracker may notice a real repeat late, after the
+ * reader already said the word again).
  *
  * This is a port of tools/recitation-spike/spike/mistakes.py and must stay in step with it.
  */
@@ -34,9 +38,12 @@ class WordChecker(
   private var reachedCount = 0
   private val checks = arrayOfNulls<WordCheck>(words.size)
   private var checkedCount = 0
-  // Checked word -> frame the reader went back to (or before) it; -1 when not being recited again.
+  // Checked word -> frame the reader went back to (or before) it, -1 when not being recited again,
+  // and how many words the reader jumped back then.
   private val revisitStart = IntArray(words.size) { -1 }
+  private val revisitJump = IntArray(words.size)
   private var revisiting = 0
+  private var furthest = 0 // furthest word the reader has been on
 
   // Frames from absolute index `firstFrame` onwards; older ones are no longer needed.
   private val frames = ArrayDeque<FloatArray>()
@@ -67,9 +74,11 @@ class WordChecker(
     for (w in current until checkedCount) {
       if (revisitStart[w] < 0) {
         revisitStart[w] = i
+        revisitJump[w] = furthest - current
         revisiting++
       }
     }
+    furthest = maxOf(furthest, current)
     var oldestRevisit = Int.MAX_VALUE
     if (revisiting > 0) {
       for (w in 0 until checkedCount) {
@@ -78,9 +87,10 @@ class WordChecker(
         if (current > w) { // passed it again
           revisitStart[w] = -1
           revisiting--
-          val again = score(w, start, i)
-          if (again.deficit > checks[w]!!.deficit) checks[w] = again
-          checked += w
+          if (i - start >= MIN_REVISIT || revisitJump[w] >= MIN_JUMP) {
+            checks[w] = score(w, start, i)
+            checked += w
+          }
         } else {
           oldestRevisit = minOf(oldestRevisit, start)
         }
@@ -107,6 +117,12 @@ class WordChecker(
   companion object {
     /** Frames before the tracker reached a word that still count as the word's audio. */
     private const val MARGIN = 30
+
+    /** Frames (0.4 s) back that make a return to checked words an attempt. */
+    const val MIN_REVISIT = 20
+
+    /** Words jumped back that make a return to checked words an attempt. */
+    const val MIN_JUMP = 2
 
     private val MARKS: Set<Char> =
       ('ً'..'ٟ').toSet() + 'ٰ' + ('ۖ'..'ۭ').toSet()

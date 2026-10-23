@@ -127,11 +127,16 @@ class WordChecker:
 
   Feed it every frame right after the tracker has consumed it. `deficits[w]` is (deficit, worst
   letter index) once word w is confirmed. When the reader goes back over checked words, each is
-  checked again as the reader passes it and keeps its better attempt, so a word said wrong and
-  then recited again correctly ends up clear.
+  checked again as the reader passes it and keeps its latest attempt, so a word said wrong and
+  then recited again correctly ends up clear (and the other way round). The tracker's position can
+  flicker back a word for a moment without the reader going back, so a return counts as an
+  attempt only if it lasted MIN_REVISIT frames or jumped back at least MIN_JUMP words (the tracker
+  may notice a real repeat late, after the reader already said the word again).
   """
 
   MARGIN = 30  # frames before the tracker reached a word that still count as the word's audio
+  MIN_REVISIT = 20  # frames (0.4 s) back that make a return an attempt
+  MIN_JUMP = 2  # words jumped back that make a return an attempt
 
   def __init__(self, tracker, words: list[str], class_of: dict[str, int], skip_penalty: float = 4.0):
     self.tracker = tracker
@@ -140,7 +145,8 @@ class WordChecker:
     self.frames = []
     self.reached = {}
     self.deficits = {}
-    self.revisited = {}  # checked word -> frame the reader went back to (or before) it
+    self.revisited = {}  # checked word -> (frame the reader went back to or before it, words jumped)
+    self.furthest = 0  # furthest word the reader has been on
 
   def _score(self, w, start, i):
     spoken = self.spoken[w]
@@ -163,11 +169,12 @@ class WordChecker:
     # Going back: checked words at or after the reader's position are being recited again.
     current = self.tracker.current_word
     for w in range(current, len(self.deficits)):
-      self.revisited.setdefault(w, i)
+      self.revisited.setdefault(w, (i, self.furthest - current))
+    self.furthest = max(self.furthest, current)
     for w in sorted(self.revisited):
       if current > w:  # passed it again
-        again = self._score(w, self.revisited.pop(w), i)
-        if again[0] > self.deficits[w][0]:
-          self.deficits[w] = again
-        scored.append(w)
+        start, jumped = self.revisited.pop(w)
+        if i - start >= self.MIN_REVISIT or jumped >= self.MIN_JUMP:
+          self.deficits[w] = self._score(w, start, i)
+          scored.append(w)
     return scored
