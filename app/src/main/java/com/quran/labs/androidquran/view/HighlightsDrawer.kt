@@ -3,10 +3,12 @@ package com.quran.labs.androidquran.view
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Region
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.util.TypedValue
 import android.util.TypedValue.COMPLEX_UNIT_DIP
@@ -39,6 +41,7 @@ class HighlightsDrawer(
 
   // cached objects for onDraw
   private val scaledRect = RectF()
+  private val colorPath = Path()
   private val alreadyHighlighted = mutableMapOf<HighlightType.Mode, MutableSet<AyahHighlight>>()
 
   // Singleton object so we can share the cache across all pages
@@ -56,7 +59,10 @@ class HighlightsDrawer(
         Paint().apply {
           val color = ContextCompat.getColor(context, colorResId)
           when (type.mode) {
-            COLOR -> this.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP)
+            COLOR -> {
+              this.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP)
+              isFilterBitmap = true
+            }
             UNDERLAY -> this.color = if (isNightMode) {
               ColorUtils.setAlphaComponent(color, NIGHT_UNDERLAY_ALPHA)
             } else {
@@ -99,6 +105,7 @@ class HighlightsDrawer(
 
     for ((highlightType, highlights) in filteredHighlights) {
       val paint = PaintCache.getPaintForHighlightType(image.context, highlightType, isNightMode())
+      colorPath.reset()
 
       for (highlight in highlights) {
         if (alreadyHighlightedContains(highlightType, highlight)) continue
@@ -128,18 +135,8 @@ class HighlightsDrawer(
               }
 
               COLOR -> {
-                // 1. save previously applied clips, and clip to just the bounds we want to colorize
-                canvas.save()
-                canvas.clipRect(scaledRect)
-                // 2. save previously applied color filter, and draw this clipped part with the color we want
-                val appliedFilter = image.colorFilter
-                image.colorFilter = paint.colorFilter
-                superOnDraw(canvas)
-                // 3. restore sate (previously applied color filter + previous canvas clips)
-                image.colorFilter = appliedFilter
-                canvas.restore()
-                // 4. clip out the bounds we just colorized so it doesn't get drawn again
-                clipOutRect(canvas, scaledRect)
+                // colorized all at once below, after collecting all the bounds of this type
+                colorPath.addRect(scaledRect, Path.Direction.CW)
               }
 
               UNDERLAY, HIGHLIGHT, BACKGROUND, UNDERLINE -> {
@@ -152,6 +149,46 @@ class HighlightsDrawer(
           alreadyHighlighted.getOrPut(highlightType.mode, { mutableSetOf() }).add(highlight)
         }
       }
+
+      if (highlightType.mode == COLOR && !colorPath.isEmpty) {
+        // draw the image once, clipped to all the bounds of this type, with the color we want,
+        // then clip them out so they don't get drawn again
+        canvas.save()
+        canvas.clipPath(colorPath)
+        drawColorized(canvas, image, paint)
+        canvas.restore()
+        clipOutPath(canvas, colorPath)
+      }
+    }
+  }
+
+  /**
+   * Draws the page image with [paint]'s color filter. The bitmap is drawn directly as ImageView
+   * would draw it: setting the view's color filter while drawing invalidates it, which would keep
+   * redrawing the page for as long as anything is colorized.
+   */
+  private fun drawColorized(canvas: Canvas, image: ImageView, paint: Paint) {
+    val drawable = image.drawable as? BitmapDrawable
+    val bitmap = drawable?.bitmap
+    if (bitmap == null) {
+      val appliedFilter = image.colorFilter
+      image.colorFilter = paint.colorFilter
+      superOnDraw(canvas)
+      image.colorFilter = appliedFilter
+      return
+    }
+    canvas.save()
+    canvas.translate(image.paddingLeft.toFloat(), image.paddingTop.toFloat())
+    canvas.concat(image.imageMatrix)
+    canvas.drawBitmap(bitmap, null, drawable.bounds, paint)
+    canvas.restore()
+  }
+
+  private fun clipOutPath(canvas: Canvas, path: Path) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      canvas.clipOutPath(path)
+    } else {
+      canvas.clipPath(path, Region.Op.DIFFERENCE)
     }
   }
 
