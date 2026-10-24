@@ -56,7 +56,9 @@ class CoordinatesModel @Inject internal constructor(private val ayahInfoDatabase
         normalizedMap[key] = normalizeAyahBounds(normalBounds)
       }
     }
-    return AyahCoordinates(ayahCoordinates.page, normalizedMap, ayahCoordinates.glyphCoordinates)
+    return AyahCoordinates(
+      ayahCoordinates.page, normalizedMap, ayahCoordinates.glyphCoordinates, ayahCoordinates.wordCoordinates
+    )
   }
 
   private fun normalizeAyahBounds(ayahBounds: List<AyahBounds>): List<AyahBounds> {

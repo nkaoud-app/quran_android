@@ -18,6 +18,7 @@ import com.quran.page.common.data.coordinates.PageGlyphsCoords;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,14 @@ public class AyahInfoDatabaseHandler {
   private static final Map<String, AyahInfoDatabaseHandler> ayahInfoCache = new HashMap<>();
   private static File quranDatabaseDirectory = null;
 
+  // Glyphs narrower than this share of the text width are pause marks, not words.
+  private static final float MAX_MARK_WIDTH_RATIO = 0.019f;
+  // Room around a pause mark's glyph, as a share of the text width.
+  private static final float MARK_PADDING_RATIO = 0.004f;
+
   private final SQLiteDatabase database;
   private final boolean hasGlyphData;
+  private int textWidth = -1;
 
   static AyahInfoDatabaseHandler getAyahInfoDatabaseHandler(
       String databaseName, QuranFileUtils quranFileUtils) {
@@ -173,8 +180,149 @@ public class AyahInfoDatabaseHandler {
 
     PageGlyphsCoords glyphCoords = includeGlyphData ?
         new PageGlyphsCoords(page, glyphsBuilder.build()) : null;
+    Map<String, List<AyahBounds>> wordBounds = includeGlyphData ?
+        Collections.emptyMap() : getWordBoundsForPage(page);
 
-    return new AyahCoordinates(page, ayahBounds, glyphCoords);
+    return new AyahCoordinates(page, ayahBounds, glyphCoords, wordBounds);
+  }
+
+  /**
+   * Bounds of each word on the page ("sura:ayah:word", words counted from 1 within the ayah), for
+   * databases without glyph types. Their glyphs are, in order, an ayah's words and pause marks and
+   * then its number. Pause marks are told apart by their width; this matches the word count of the
+   * Arabic text in all but 2 of the 6236 ayahs of the Madani pages, at every page size. Pause marks
+   * are part of the word before them, and each word's box spans its line's height.
+   */
+  @NonNull
+  private Map<String, List<AyahBounds>> getWordBoundsForPage(int page) {
+    final Map<String, List<AyahBounds>> words = new HashMap<>();
+    Cursor cursor = null;
+    try {
+      final float maxMarkWidth = MAX_MARK_WIDTH_RATIO * getTextWidth();
+      final float markPadding = MARK_PADDING_RATIO * getTextWidth();
+      // every glyph of the ayahs on this page, since words are counted from the start of the ayah
+      cursor = database.rawQuery("SELECT g." + COL_PAGE + ", g." + COL_LINE + ", g." + COL_SURA +
+          ", g." + COL_AYAH + ", g." + COL_POSITION + ", g." + MIN_X + ", g." + MIN_Y +
+          ", g." + MAX_X + ", g." + MAX_Y + " FROM " + GLYPHS_TABLE + " g JOIN (SELECT DISTINCT " +
+          COL_SURA + ", " + COL_AYAH + " FROM " + GLYPHS_TABLE + " WHERE " + COL_PAGE + " = ?) a ON g." +
+          COL_SURA + " = a." + COL_SURA + " AND g." + COL_AYAH + " = a." + COL_AYAH +
+          " ORDER BY g." + COL_SURA + ", g." + COL_AYAH + ", g." + COL_POSITION,
+          new String[] { String.valueOf(page) });
+      final List<int[]> rows = new ArrayList<>();
+      while (cursor.moveToNext()) {
+        final int[] row = new int[9];
+        for (int i = 0; i < row.length; i++) {
+          row[i] = cursor.getInt(i);
+        }
+        rows.add(row);
+      }
+
+      // Each line's height, so a word's box covers its marks and dots above and below.
+      final Map<Integer, int[]> lines = new HashMap<>();
+      for (int[] row : rows) {
+        if (row[0] != page) {
+          continue;
+        }
+        final int[] line = lines.get(row[1]);
+        if (line == null) {
+          lines.put(row[1], new int[] { row[6], row[8] });
+        } else {
+          line[0] = Math.min(line[0], row[6]);
+          line[1] = Math.max(line[1], row[8]);
+        }
+      }
+
+      // A word's box runs from its right edge to the next word on its line (the text is right to
+      // left), so the pause marks in between belong to the word before them and are hidden and
+      // colored with it.
+      final List<WordBox> boxes = new ArrayList<>();
+      WordBox last = null;
+      int word = 0;
+      for (int i = 0; i < rows.size(); i++) {
+        final int[] row = rows.get(i);
+        if (i == 0 || !sameAyah(rows.get(i - 1), row)) {
+          word = 0;
+          last = null;
+        }
+        final boolean ayahNumber = i == rows.size() - 1 || !sameAyah(row, rows.get(i + 1));
+        final boolean pauseMark = !ayahNumber && row[7] - row[5] <= maxMarkWidth;
+        if (!ayahNumber && !pauseMark) {
+          word++;
+        }
+        if (row[0] != page || ayahNumber || word == 0) {
+          last = null;
+          continue;
+        }
+        if (pauseMark) {
+          // its glyph is only an anchor, often a few pixels wide
+          final float center = (row[5] + row[7]) / 2f;
+          final float half = Math.max(Math.abs(row[7] - row[5]), row[8] - row[6]) / 2f + markPadding;
+          if (last != null && last.line == row[1]) {
+            last.left = Math.min(last.left, center - half);
+          } else {
+            last = new WordBox(row[2] + ":" + row[3] + ":" + word, row[1], row[4], center - half, center + half);
+            boxes.add(last);
+          }
+        } else {
+          if (last != null && last.line == row[1]) {
+            last.left = Math.min(last.left, row[7]);
+          }
+          last = new WordBox(row[2] + ":" + row[3] + ":" + word, row[1], row[4], row[5], row[7]);
+          boxes.add(last);
+        }
+      }
+
+      for (WordBox box : boxes) {
+        final int[] line = lines.get(box.line);
+        List<AyahBounds> bounds = words.get(box.key);
+        if (bounds == null) {
+          bounds = new ArrayList<>();
+          words.put(box.key, bounds);
+        }
+        bounds.add(new AyahBounds(box.line, box.position,
+            Math.round(box.left), line[0], Math.round(box.right), line[1]));
+      }
+    } catch (Exception e) {
+      // word highlights are optional; ayah highlights still work
+      words.clear();
+    } finally {
+      DatabaseUtils.closeCursor(cursor);
+    }
+    return words;
+  }
+
+  private static class WordBox {
+    final String key;
+    final int line;
+    final int position;
+    float left;
+    final float right;
+
+    WordBox(String key, int line, int position, float left, float right) {
+      this.key = key;
+      this.line = line;
+      this.position = position;
+      this.left = left;
+      this.right = right;
+    }
+  }
+
+  private static boolean sameAyah(int[] first, int[] second) {
+    return first[2] == second[2] && first[3] == second[3];
+  }
+
+  private int getTextWidth() {
+    if (textWidth < 0) {
+      Cursor cursor = null;
+      try {
+        cursor = database.rawQuery(
+            "SELECT MAX(" + MAX_X + ") - MIN(" + MIN_X + ") FROM " + GLYPHS_TABLE, null);
+        textWidth = cursor.moveToFirst() ? cursor.getInt(0) : 0;
+      } finally {
+        DatabaseUtils.closeCursor(cursor);
+      }
+    }
+    return textWidth;
   }
 
   private boolean haveVerseMarkerData() {

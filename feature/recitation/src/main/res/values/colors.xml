@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- recitation on the mushaf pages: text colors of recited and missed words, the next word -->
+  <color name="recitation_recited">#FF2E7D32</color>
+  <color name="recitation_missed">#FFD50000</color>
+  <color name="recitation_next_word">#66FFC107</color>
+  <color name="recitation_hidden">#00000000</color>
+</resources>

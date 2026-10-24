@@ -22,3 +22,6 @@ crashlytics-build.properties
 com_crashlytics_export_strings.xml
 extras
 app/google-services.json
+
+# sherpa-onnx AAR, downloaded by app/build.gradle.kts
+app/libs/sherpa-onnx-*.aar

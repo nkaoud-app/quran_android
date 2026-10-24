@@ -110,6 +110,11 @@ android {
     resources {
       excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/INDEX.LIST")
     }
+    // sherpa-onnx's native libraries for emulators only add about 60 MB.
+    jniLibs {
+      excludes += setOf("lib/x86/libsherpa-onnx-*.so", "lib/x86_64/libsherpa-onnx-*.so",
+        "lib/x86/libonnxruntime.so", "lib/x86_64/libonnxruntime.so")
+    }
   }
 }
 
@@ -143,6 +148,19 @@ afterEvaluate {
   }
 }
 
+// sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx, Apache-2.0) runs Natlu's recitation model.
+// It is not on Maven Central, so its release AAR is downloaded once into libs/.
+val sherpaOnnxVersion = "1.13.5"
+val sherpaOnnxAar = File(projectDir, "libs/sherpa-onnx-$sherpaOnnxVersion.aar")
+if (!sherpaOnnxAar.exists()) {
+  sherpaOnnxAar.parentFile.mkdirs()
+  val partial = File(sherpaOnnxAar.path + ".part")
+  java.net.URI(
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaOnnxVersion/sherpa-onnx-$sherpaOnnxVersion.aar"
+  ).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+  check(partial.renameTo(sherpaOnnxAar)) { "could not save $sherpaOnnxAar" }
+}
+
 if (File(rootDir, "extras/extras.gradle").exists()) {
   apply(from = File(rootDir, "extras/extras.gradle"))
 } else {
@@ -150,6 +168,7 @@ if (File(rootDir, "extras/extras.gradle").exists()) {
 }
 
 dependencies {
+  implementation(files(sherpaOnnxAar))
   implementation(project(":common:analytics"))
   implementation(project(":common:audio"))
   implementation(project(":common:bookmark"))

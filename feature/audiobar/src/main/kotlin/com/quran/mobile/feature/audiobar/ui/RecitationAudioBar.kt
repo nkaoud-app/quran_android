@@ -70,10 +70,6 @@ internal fun RecitationStoppedAudioBar(
     IconButton(onClick = { stoppedEventSink(AudioBarUiEvent.RecitationStoppedEvent.EndSession) }) {
       Icon(QuranIcons.Close, contentDescription = "")
     }
-
-    IconButton(onClick = { stoppedEventSink(AudioBarUiEvent.RecitationStoppedEvent.PlayRecitation) }) {
-      Icon(QuranIcons.PlayArrow, contentDescription = "")
-    }
   }
 }
 
@@ -97,16 +93,6 @@ internal fun RecitationAudioBar(
     )
 
     Spacer(modifier = Modifier.weight(1f))
-
-    Divider(
-      modifier = Modifier
-        .fillMaxHeight()
-        .width(Dp.Hairline)
-    )
-
-    IconButton(onClick = { eventSink(AudioBarUiEvent.CommonRecordingEvent.Transcript) }) {
-      Icon(QuranIcons.Chat, contentDescription = "")
-    }
 
     Divider(
       modifier = Modifier
