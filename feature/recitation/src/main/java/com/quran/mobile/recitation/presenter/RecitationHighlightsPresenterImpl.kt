@@ -17,9 +17,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 /**
- * Shows the recitation session on a mushaf page: recited words turn green (orange when the
- * mistake check found them unclear), the word being recited is highlighted, and words not yet
- * recited can be hidden (keeping the ayah numbers).
+ * Shows the recitation session on a mushaf page: recited words turn green, words passed without
+ * being said right red, the word the reader is on is highlighted, and words not yet recited can
+ * be hidden (keeping the ayah numbers).
  *
  * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler).
  */
@@ -71,11 +71,11 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
       val ayah = word.word.ayah
       val position = word.word.wordPosition
       when {
+        index in progress.recited -> result += highlight(ayah, position, RECITED)
+        index in progress.missed -> result += highlight(ayah, position, MISSED)
         // Word by word, so the ayah numbers stay visible as landmarks.
-        progress.hideUnrecited && index >= progress.completed -> result += highlight(ayah, position, HIDDEN)
+        progress.hideUnrecited && index >= progress.start -> result += highlight(ayah, position, HIDDEN)
         index == progress.currentWord -> result += highlight(ayah, position, CURRENT_WORD)
-        index < progress.completed ->
-          result += highlight(ayah, position, if (index in progress.unclear) UNCLEAR else RECITED)
       }
     }
     return result
@@ -96,12 +96,12 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
     val RECITED = HighlightType(
       41, R.color.recitation_recited, Mode.COLOR, nightColorResId = R.color.recitation_recited_night,
     )
-    val UNCLEAR = HighlightType(
-      42, R.color.recitation_unclear, Mode.COLOR, nightColorResId = R.color.recitation_unclear_night,
+    val MISSED = HighlightType(
+      42, R.color.recitation_missed, Mode.COLOR, nightColorResId = R.color.recitation_missed_night,
     )
     val HIDDEN = HighlightType(43, R.color.recitation_hidden, Mode.HIDE)
     val CURRENT_WORD = HighlightType(44, R.color.recitation_current_word, Mode.HIGHLIGHT)
 
-    private val TYPES = listOf(RECITED, UNCLEAR, HIDDEN, CURRENT_WORD)
+    private val TYPES = listOf(RECITED, MISSED, HIDDEN, CURRENT_WORD)
   }
 }

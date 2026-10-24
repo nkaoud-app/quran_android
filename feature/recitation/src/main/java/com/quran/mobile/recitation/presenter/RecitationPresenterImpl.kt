@@ -12,17 +12,20 @@ import android.view.WindowManager
 import android.widget.Toast
 import com.quran.data.core.QuranInfo
 import com.quran.data.di.QuranScope
+import com.quran.data.model.AyahWord
 import com.quran.data.model.SuraAyah
 import com.quran.recitation.common.Recitation
 import com.quran.recitation.common.RecitationSession
 import com.quran.recitation.common.RecitedAyah
 import com.quran.recitation.events.RecitationEventPresenter
 import com.quran.recitation.presenter.RecitationPresenter
-import com.quran.recitation.tracking.LiveRecitation
-import com.quran.recitation.tracking.RecitationModel
+import com.quran.recitation.tracking.FollowerConfig
+import com.quran.recitation.tracking.LivePhonemeRecitation
+import com.quran.recitation.tracking.PhonemeFollower
+import com.quran.recitation.tracking.PhonemeRecognizerFactory
+import com.quran.recitation.tracking.RecitationPhonemes
 import com.quran.recitation.tracking.RecitationText
-import com.quran.recitation.tracking.RecitationTracker
-import com.quran.recitation.tracking.RecitationTrackingSettings
+import com.quran.recitation.tracking.ZipformerModel
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -35,14 +38,13 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * Recitation on the mushaf pages: the on-device recitation model follows the reader word by word
- * (see common/recitation's tracking package) and the pages show how far they got
- * ([RecitationHighlightsPresenterImpl]), turning when the reader moves on to the next page.
+ * Recitation on the mushaf pages: a streaming phoneme model (see ZipformerModel) recognizes what
+ * is recited and a [PhonemeFollower] follows the reader through the sura word by word; the pages
+ * show how far they got ([RecitationHighlightsPresenterImpl]) and turn as they move on.
  *
- * The microphone button starts listening from the selected ayah or the top of the page, and stops
- * it again; the session (and its highlights) stays until it is closed. Starting again on the page
- * the reader stopped on carries on from the ayah they were on. The tracking settings are the ones
- * tuned on the recitation tracking screen.
+ * The microphone button starts from the selected ayah or the top of the page and stops again; the
+ * session and its highlights stay until it is closed. Starting again on the page the reader
+ * stopped on carries on from their ayah. A long press chooses how strictly words are checked.
  */
 @QuranScope
 class RecitationPresenterImpl @Inject constructor(
@@ -50,6 +52,7 @@ class RecitationPresenterImpl @Inject constructor(
   private val recitationText: RecitationText,
   private val eventPresenter: RecitationEventPresenter,
   private val state: MushafRecitationState,
+  private val recognizerFactory: PhonemeRecognizerFactory,
 ) : RecitationPresenter {
   private val enabled = MutableStateFlow(true)
   private var activity: Activity? = null
@@ -97,6 +100,10 @@ class RecitationPresenterImpl @Inject constructor(
 
   override fun startOrStopRecitation(startAyah: () -> SuraAyah, showModeSelection: Boolean) {
     val activity = activity ?: return
+    if (showModeSelection) {
+      chooseStrictness(activity)
+      return
+    }
     if (listening != null) {
       stopListening()
       return
@@ -104,7 +111,7 @@ class RecitationPresenterImpl @Inject constructor(
     if (preparing != null || downloading != null) return
     val ayah = startAyah()
     when {
-      !RecitationModel.isDownloaded(activity) -> offerDownload(activity, ayah)
+      !ZipformerModel.isDownloaded(activity) -> offerDownload(activity, ayah)
       activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> {
         pendingStart = ayah
         activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
@@ -131,12 +138,30 @@ class RecitationPresenterImpl @Inject constructor(
     eventPresenter.onRecitationSessionChange(null)
   }
 
+  private fun chooseStrictness(activity: Activity) {
+    val preferences = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    dialog = AlertDialog.Builder(activity)
+      .setTitle("How strictly words are checked")
+      .setSingleChoiceItems(Strictness.entries.map { it.label }.toTypedArray(), strictness(activity).ordinal) { chosen, which ->
+        preferences.edit().putString(KEY_STRICTNESS, Strictness.entries[which].name).apply()
+        chosen.dismiss()
+      }
+      .setNegativeButton(android.R.string.cancel, null)
+      .show()
+  }
+
+  private fun strictness(context: Context): Strictness {
+    val name = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getString(KEY_STRICTNESS, null)
+    return Strictness.entries.firstOrNull { it.name == name } ?: Strictness.NORMAL
+  }
+
   private fun offerDownload(activity: Activity, ayah: SuraAyah) {
     dialog = AlertDialog.Builder(activity)
       .setTitle("Recitation tracking")
       .setMessage(
-        "Following your recitation needs the recitation model (${RecitationModel.DOWNLOAD_SIZE}), " +
-          "which runs on this device. Download it now?"
+        "Following your recitation needs a recitation model (${ZipformerModel.DOWNLOAD_SIZE}), " +
+          "which runs on this device. Automatic feedback can be wrong and does not replace " +
+          "reciting to a qualified teacher. Download it now?"
       )
       .setPositiveButton("Download") { _, _ -> download(activity, ayah) }
       .setNegativeButton(android.R.string.cancel, null)
@@ -157,7 +182,7 @@ class RecitationPresenterImpl @Inject constructor(
     dialog = progress
     downloading = scope.launch {
       val failure = try {
-        RecitationModel.download(activity) { percent, bytes ->
+        ZipformerModel.download(activity) { percent, bytes ->
           progress.setMessage(if (percent >= 0) "$percent%" else "${bytes / 1_000_000} MB")
         }
         null
@@ -179,73 +204,80 @@ class RecitationPresenterImpl @Inject constructor(
   private fun start(activity: Activity, requested: SuraAyah) {
     val scope = scope ?: return
     preparing = scope.launch {
-      val progress = resumableProgress(requested) ?: newSession(requested) ?: run {
+      val progress = state.progress.value?.takeIf {
+        eventPresenter.hasRecitationSession() && it.sura == requested.sura
+      } ?: newSession(activity, requested) ?: run {
         toast(activity, "Arabic Quran data is not available. Download it from Quran data settings.")
         preparing = null
         return@launch
       }
-      // Carry on from the ayah the reader stopped on when they start again on that page.
+      // Carry on from the ayah the reader stopped on when they start again on that page;
+      // otherwise start at the requested ayah. Highlights from there on start over.
       val current = progress.currentAyah
       val from = if (current != null && requested <= current &&
-        quranInfo.getPageFromSuraAyah(current.sura, current.ayah) == quranInfo.getPageFromSuraAyah(requested.sura, requested.ayah)
+        quranInfo.getPageFromSuraAyah(current.sura, current.ayah) ==
+        quranInfo.getPageFromSuraAyah(requested.sura, requested.ayah)
       ) current else requested
-      val offset = progress.indexOf(from)
-      state.update { it.copy(completed = offset, currentWord = -1, unclear = it.unclear.filterTo(HashSet()) { w -> w < offset }) }
+      val startWord = progress.indexOf(from).coerceAtLeast(0)
+      state.update { p ->
+        p.copy(
+          start = startWord,
+          currentWord = startWord,
+          recited = p.recited.filterTo(HashSet()) { it < startWord },
+          missed = p.missed.filterTo(HashSet()) { it < startWord },
+        )
+      }
+      val openings = RecitationPhonemes.openings(activity, from.sura)
       preparing = null
-      listen(activity, scope, progress.words.drop(offset).map { it.text }, offset, from)
+      listen(activity, scope, progress.words.map { it.phonemes }, startWord, openings, from)
     }
   }
 
-  /** The current session's progress when [requested] is within its words. */
-  private fun resumableProgress(requested: SuraAyah): MushafRecitationProgress? {
-    val progress = state.progress.value ?: return null
-    return progress.takeIf { eventPresenter.hasRecitationSession() && it.indexOf(requested) >= 0 }
-  }
-
-  private suspend fun newSession(start: SuraAyah): MushafRecitationProgress? {
-    val words = recitationText.words(start.sura, start.ayah)
-    if (words.isEmpty()) return null
+  /** Starts a session on [start]'s sura; null when its text is not available. */
+  private suspend fun newSession(context: Context, start: SuraAyah): MushafRecitationProgress? {
+    val phonemes = RecitationPhonemes.sura(context, start.sura)
+    // Mushaf word positions count the ۞ and ۩ marks between words, which are not recited.
+    val positions = recitationText.words(start.sura, 1)
+      .filter { word -> word.text.any { it in 'ء'..'ي' || it == 'ٱ' } }
+      .groupBy({ it.word.ayah.ayah }, { it.word.wordPosition })
+    if (phonemes.isEmpty() || positions.isEmpty()) return null
+    val words = phonemes.flatMapIndexed { index, ayahPhonemes ->
+      val ayah = SuraAyah(start.sura, index + 1)
+      val ayahPositions = positions[ayah.ayah].orEmpty()
+      ayahPhonemes.mapIndexed { i, phoneme ->
+        val position = if (ayahPositions.size == ayahPhonemes.size) ayahPositions[i] else i + 1
+        MushafWord(AyahWord(ayah, position), phoneme)
+      }
+    }
     val pages = words.map { quranInfo.getPageFromSuraAyah(it.word.ayah.sura, it.word.ayah.ayah) }
-    state.start(MushafRecitationProgress(words, pages))
+    val first = words.indexOfFirst { it.word.ayah == start }.coerceAtLeast(0)
+    state.start(MushafRecitationProgress(words, pages, start = first, currentWord = first))
     eventPresenter.onRecitationSessionChange(MushafSession(start, state))
     return state.progress.value
   }
 
   @SuppressLint("MissingPermission") // checked in startOrStopRecitation
-  private fun listen(activity: Activity, scope: CoroutineScope, words: List<String>, offset: Int, from: SuraAyah) {
-    val settings = RecitationTrackingSettings.load(
-      activity.getSharedPreferences(RecitationTrackingSettings.PREFERENCES, Context.MODE_PRIVATE)
-    )
-    val recitation = LiveRecitation(
-      words, RecitationTracker.openingPhrases(from.sura, from.ayah), settings, RecitationModel.file(activity),
-    )
+  private fun listen(
+    activity: Activity,
+    scope: CoroutineScope,
+    phonemes: List<String>,
+    startWord: Int,
+    openings: List<List<String>>,
+    from: SuraAyah,
+  ) {
     activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     eventPresenter.onListeningStateChange(true)
     eventPresenter.onRecitationChange(from)
     var shownAyah = from
     listening = scope.launch {
       try {
+        val recitation = LivePhonemeRecitation(
+          recognizerFactory, ZipformerModel.file(activity), ZipformerModel.tokens(activity),
+          phonemes, startWord, openings, FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
+        )
         recitation.run(
           onListening = { toast(activity, "Listening… recite from ayah ${from.ayah}.") },
-          onUpdate = { update ->
-            state.update { progress ->
-              val unclear = progress.unclear.toHashSet()
-              for ((w, check) in update.checked) {
-                if (check.deficit < settings.unclearThreshold) unclear += offset + w else unclear -= offset + w
-              }
-              progress.copy(
-                completed = offset + update.completed,
-                currentWord = offset + update.currentWord,
-                unclear = unclear,
-              )
-            }
-            // Turn the page once the reader moves on to an ayah on the next one.
-            val ayah = state.progress.value?.currentAyah
-            if (ayah != null && ayah != shownAyah) {
-              shownAyah = ayah
-              eventPresenter.onRecitationChange(ayah)
-            }
-          },
+          onUpdate = { update -> applyUpdate(activity, update, shownAyah)?.let { shownAyah = it } },
         )
       } catch (e: Exception) {
         if (e !is CancellationException) {
@@ -254,6 +286,48 @@ class RecitationPresenterImpl @Inject constructor(
         }
       }
     }
+  }
+
+  /** Applies [update]; returns the ayah the pages were turned to, if they were. */
+  private fun applyUpdate(activity: Activity, update: LivePhonemeRecitation.Update, shownAyah: SuraAyah): SuraAyah? {
+    state.update { progress ->
+      val recited = progress.recited.toHashSet()
+      val missed = progress.missed.toHashSet()
+      for (event in update.events) {
+        when (event) {
+          is PhonemeFollower.Event.Recited -> {
+            recited += event.word
+            missed -= event.word
+          }
+          is PhonemeFollower.Event.Missed -> {
+            missed += event.word
+            recited -= event.word
+          }
+          is PhonemeFollower.Event.Skipped -> missed -= event.word
+          is PhonemeFollower.Event.Repeat -> {
+            recited.removeAll { it >= event.word }
+            missed.removeAll { it >= event.word }
+          }
+        }
+      }
+      progress.copy(
+        currentWord = if (update.currentWord >= 0) update.currentWord else progress.currentWord,
+        recited = recited,
+        missed = missed,
+      )
+    }
+    val progress = state.progress.value ?: return null
+    if (progress.currentWord >= progress.words.size) {
+      toast(activity, "Surah complete.")
+      stopListening()
+    }
+    // Turn the page once the reader moves on to an ayah on the next one.
+    val ayah = progress.currentAyah
+    if (ayah != null && ayah != shownAyah) {
+      eventPresenter.onRecitationChange(ayah)
+      return ayah
+    }
+    return null
   }
 
   private fun stopListening() {
@@ -267,6 +341,13 @@ class RecitationPresenterImpl @Inject constructor(
 
   private fun toast(context: Context, message: String) {
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+  }
+
+  /** How close a recited word must be to count as recited (average cost per phoneme). */
+  private enum class Strictness(val label: String, val maxWordCost: Double) {
+    EASY("Easy (beginners, noisy rooms)", 0.5),
+    NORMAL("Normal (everyday practice)", 0.35),
+    STRICT("Strict (memorization tests)", 0.25),
   }
 
   private class MushafSession(
@@ -287,5 +368,7 @@ class RecitationPresenterImpl @Inject constructor(
 
   private companion object {
     const val REQUEST_AUDIO = 4201
+    const val PREFERENCES = "recitation_mushaf"
+    const val KEY_STRICTNESS = "strictness"
   }
 }

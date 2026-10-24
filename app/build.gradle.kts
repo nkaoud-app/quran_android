@@ -1,6 +1,7 @@
 import com.android.build.api.variant.HasUnitTest
 import com.android.build.api.variant.ResValue
 import net.ltgt.gradle.errorprone.ErrorProneOptions
+import java.net.URI
 import java.util.Locale
 import java.util.Properties
 
@@ -118,6 +119,12 @@ android {
     resources {
       excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/INDEX.LIST")
     }
+    jniLibs {
+      // onnxruntime-android and sherpa-onnx both bring ONNX Runtime 1.27, which either can use.
+      pickFirsts += setOf("**/libonnxruntime.so")
+      // sherpa-onnx's native libraries for emulators only add about 60 MB.
+      excludes += setOf("lib/x86/libsherpa-onnx-*.so", "lib/x86_64/libsherpa-onnx-*.so")
+    }
   }
 }
 
@@ -208,6 +215,19 @@ afterEvaluate {
   }
 }
 
+// sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx, Apache-2.0) runs the recitation phoneme
+// model. It is not on Maven Central, so its release AAR is downloaded once into libs/.
+val sherpaOnnxVersion = "1.13.5"
+val sherpaOnnxAar = File(projectDir, "libs/sherpa-onnx-$sherpaOnnxVersion.aar")
+if (!sherpaOnnxAar.exists()) {
+  sherpaOnnxAar.parentFile.mkdirs()
+  val partial = File(sherpaOnnxAar.path + ".part")
+  URI(
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaOnnxVersion/sherpa-onnx-$sherpaOnnxVersion.aar"
+  ).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+  check(partial.renameTo(sherpaOnnxAar)) { "could not save $sherpaOnnxAar" }
+}
+
 if (File(rootDir, "extras/extras.gradle").exists()) {
   apply(from = File(rootDir, "extras/extras.gradle"))
 } else {
@@ -215,6 +235,7 @@ if (File(rootDir, "extras/extras.gradle").exists()) {
 }
 
 dependencies {
+  implementation(files(sherpaOnnxAar))
   implementation(project(":common:analytics"))
   implementation(project(":common:audio"))
   implementation(project(":common:bookmark"))

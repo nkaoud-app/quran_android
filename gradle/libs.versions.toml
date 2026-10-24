@@ -26,7 +26,7 @@ quranMobileSyncVersion = "0.1.36"
 retrofitVersion = "3.0.0"
 rxandroidVersion = "3.0.2"
 rxjavaVersion = "3.1.12"
-onnxruntimeVersion = "1.31.0"
+onnxruntimeVersion = "1.27.0" # the version sherpa-onnx bundles, so they share libonnxruntime.so
 sqldelight = "2.4.1"
 timberVersion = "5.0.1"
 

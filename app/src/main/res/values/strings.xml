@@ -64,7 +64,7 @@
   <string name="about_quran_enc_summary">Translations for many languages</string>
   <string name="about_quran_enc_url" translatable="false">https://quranenc.com</string>
   <string name="about_tanzil" translatable="false">Tanzil</string>
-  <string name="about_tanzil_summary">Translations for a few languages</string>
+  <string name="about_tanzil_summary">Translations for a few languages, and the Quran text recitation tracking follows</string>
   <string name="about_tanzil_url" translatable="false">http://tanzil.net</string>
   <string name="about_noorhidayat" translatable="false">Noorhidayat</string>
   <string name="about_noorhidayat_summary">Noorehira font and Mufti Taqi Translation</string>
