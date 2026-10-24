@@ -22,6 +22,7 @@ class PhonemeFollowerTest {
     val recited = sortedSetOf<Int>()
     val missed = sortedSetOf<Int>()
     val everMissed = sortedSetOf<Int>()
+    val wrongVowels = sortedSetOf<Int>()
     val repeats = ArrayList<Int>()
     var currentWord = -1
 
@@ -45,17 +46,20 @@ class PhonemeFollowerTest {
           is PhonemeFollower.Event.Recited -> {
             replay.recited += event.word
             replay.missed -= event.word
+            if (event.wrongVowels) replay.wrongVowels += event.word else replay.wrongVowels -= event.word
           }
           is PhonemeFollower.Event.Missed -> {
             replay.missed += event.word
             replay.everMissed += event.word
             replay.recited -= event.word
+            replay.wrongVowels -= event.word
           }
           is PhonemeFollower.Event.Skipped -> replay.missed -= event.word
           is PhonemeFollower.Event.Repeat -> {
             replay.repeats += event.word
             replay.recited.removeAll { it >= event.word }
             replay.missed.removeAll { it >= event.word }
+            replay.wrongVowels.removeAll { it >= event.word }
           }
         }
       }
@@ -69,6 +73,7 @@ class PhonemeFollowerTest {
     val replay = replay("fatiha.txt")
     assertThat(replay.recited).containsExactlyElementsIn(replay.ayahOf.indices)
     assertThat(replay.missed).isEmpty()
+    assertThat(replay.wrongVowels).isEmpty()
     assertThat(replay.currentWord).isEqualTo(replay.ayahOf.size)
   }
 
@@ -78,6 +83,7 @@ class PhonemeFollowerTest {
     val ayahs1To10 = (1..10).flatMap(replay::ayahWords)
     assertThat(replay.recited).containsExactlyElementsIn(ayahs1To10)
     assertThat(replay.missed).isEmpty()
+    assertThat(replay.wrongVowels).isEmpty()
     assertThat(replay.repeats).isEmpty()
     assertThat(replay.currentWord).isEqualTo(ayahs1To10.last() + 1)
   }
@@ -113,5 +119,18 @@ class PhonemeFollowerTest {
     assertThat(replay.repeats).hasSize(1)
     assertThat(replay.everMissed).contains(replaced) // the first time
     assertThat(replay.recited).contains(replaced) // the second time
+  }
+
+  /**
+   * Minshawi's al-Mulk 1-2, edited: ٱلۡمُلۡكُ in ayah 1 replaced by his ٱلۡمَلِكُ (12:43), the same
+   * letters with other vowels.
+   */
+  @Test
+  fun `a word said with other vowels is recited with wrong vowels`() {
+    val replay = replay("mulk-vowel.txt")
+    val replaced = replay.ayahWords(1)[3] // ٱلۡمُلۡكُ
+    assertThat(replay.recited).containsExactlyElementsIn((1..2).flatMap(replay::ayahWords))
+    assertThat(replay.missed).isEmpty()
+    assertThat(replay.wrongVowels).containsExactly(replaced)
   }
 }

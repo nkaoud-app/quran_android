@@ -225,6 +225,7 @@ class RecitationPresenterImpl @Inject constructor(
           currentWord = startWord,
           recited = p.recited.filterTo(HashSet()) { it < startWord },
           missed = p.missed.filterTo(HashSet()) { it < startWord },
+          wrongVowels = p.wrongVowels.filterTo(HashSet()) { it < startWord },
         )
       }
       val openings = RecitationPhonemes.openings(activity, from.sura)
@@ -293,20 +294,24 @@ class RecitationPresenterImpl @Inject constructor(
     state.update { progress ->
       val recited = progress.recited.toHashSet()
       val missed = progress.missed.toHashSet()
+      val wrongVowels = progress.wrongVowels.toHashSet()
       for (event in update.events) {
         when (event) {
           is PhonemeFollower.Event.Recited -> {
             recited += event.word
             missed -= event.word
+            if (event.wrongVowels) wrongVowels += event.word else wrongVowels -= event.word
           }
           is PhonemeFollower.Event.Missed -> {
             missed += event.word
             recited -= event.word
+            wrongVowels -= event.word
           }
           is PhonemeFollower.Event.Skipped -> missed -= event.word
           is PhonemeFollower.Event.Repeat -> {
             recited.removeAll { it >= event.word }
             missed.removeAll { it >= event.word }
+            wrongVowels.removeAll { it >= event.word }
           }
         }
       }
@@ -314,6 +319,7 @@ class RecitationPresenterImpl @Inject constructor(
         currentWord = if (update.currentWord >= 0) update.currentWord else progress.currentWord,
         recited = recited,
         missed = missed,
+        wrongVowels = wrongVowels,
       )
     }
     val progress = state.progress.value ?: return null

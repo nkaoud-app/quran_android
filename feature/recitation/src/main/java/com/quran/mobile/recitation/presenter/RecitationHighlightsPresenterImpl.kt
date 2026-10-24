@@ -17,8 +17,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 /**
- * Shows the recitation session on a mushaf page: recited words turn green, words passed without
- * being said right red, the word the reader is on is highlighted, and words not yet recited can
+ * Shows the recitation session on a mushaf page: recited words turn green (orange with a wrong
+ * vowel), words passed without being said right red, the word the reader is on is highlighted, and words not yet recited can
  * be hidden (keeping the ayah numbers).
  *
  * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler).
@@ -71,6 +71,7 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
       val ayah = word.word.ayah
       val position = word.word.wordPosition
       when {
+        index in progress.wrongVowels -> result += highlight(ayah, position, WRONG_VOWEL)
         index in progress.recited -> result += highlight(ayah, position, RECITED)
         index in progress.missed -> result += highlight(ayah, position, MISSED)
         // Word by word, so the ayah numbers stay visible as landmarks.
@@ -101,7 +102,10 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
     )
     val HIDDEN = HighlightType(43, R.color.recitation_hidden, Mode.HIDE)
     val CURRENT_WORD = HighlightType(44, R.color.recitation_current_word, Mode.HIGHLIGHT)
+    val WRONG_VOWEL = HighlightType(
+      45, R.color.recitation_wrong_vowel, Mode.COLOR, nightColorResId = R.color.recitation_wrong_vowel_night,
+    )
 
-    private val TYPES = listOf(RECITED, MISSED, HIDDEN, CURRENT_WORD)
+    private val TYPES = listOf(RECITED, WRONG_VOWEL, MISSED, HIDDEN, CURRENT_WORD)
   }
 }

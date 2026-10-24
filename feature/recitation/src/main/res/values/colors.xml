@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <!-- recitation on the mushaf pages: text colors of recited and missed words, highlights of where the reader is -->
+  <!-- recitation on the mushaf pages: text colors of recited words (with a wrong vowel) and missed words, highlights of where the reader is -->
   <color name="recitation_recited">#FF2E7D32</color>
   <color name="recitation_recited_night">#FF81C784</color>
   <color name="recitation_missed">#FFD50000</color>
   <color name="recitation_missed_night">#FFFF8A80</color>
+  <color name="recitation_wrong_vowel">#FFE65100</color>
+  <color name="recitation_wrong_vowel_night">#FFFFB74D</color>
   <color name="recitation_current_word">#66FFC107</color>
   <color name="recitation_hidden">#00000000</color>
 </resources>

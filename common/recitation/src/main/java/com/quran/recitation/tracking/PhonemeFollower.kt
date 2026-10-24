@@ -42,9 +42,10 @@ data class FollowerConfig(
  * fixed cost, so repeats and skips are followed.
  *
  * When the reader moves past a word, it is checked against what was heard while they were on it:
- * close enough and it is [Event.Recited], otherwise [Event.Missed]. Words passed in a jump ahead
- * are left alone (skipped), apart from the last few before it, which the reader may already have
- * said; words thought missed just before the jump were skipped too. Going back over words clears
+ * close enough and it is [Event.Recited] (noting any letter heard with another vowel than its own),
+ * otherwise [Event.Missed]. Words passed in a jump ahead are left alone (skipped), apart from the
+ * last few before it, which the reader may already have said; words thought missed just before the
+ * jump were skipped too. Going back over words clears
  * them so they are checked again (the few just before where the reader went back too, against
  * what was just heard).
  */
@@ -56,8 +57,11 @@ class PhonemeFollower(
 ) {
 
   sealed class Event {
-    /** The reader recited [word]. */
-    data class Recited(val word: Int) : Event()
+    /**
+     * The reader recited [word]; [wrongVowels] when a letter of it was heard with another vowel
+     * (fatha, damma, kasra) than its own, or with none or one it does not have.
+     */
+    data class Recited(val word: Int, val wrongVowels: Boolean = false) : Event()
 
     /** The reader passed [word] without saying it right. */
     data class Missed(val word: Int) : Event()
@@ -220,7 +224,7 @@ class PhonemeFollower(
     when {
       word > previous && word - previous <= config.maxMissedRun -> {
         for (w in previous until word) {
-          if (check(w, reachedAt[w])) recited(w) else missed(w)
+          check(w, reachedAt[w])?.let(::recited) ?: missed(w)
           reachedAt.remove(w)
         }
         reachedAt[word] = heardCount
@@ -233,7 +237,7 @@ class PhonemeFollower(
         // Only what was heard after the last word recited (which may sound like these).
         val since = lastRecitedAt
         for (w in maxOf(previous, word - JUMP_LOOKBACK) until word) {
-          if (check(w, since, margin = 0)) recited(w)
+          check(w, since, margin = 0)?.let(::recited)
         }
         reachedAt.clear()
         reachedAt[word] = heardCount
@@ -245,7 +249,7 @@ class PhonemeFollower(
         // alike): the last few words before it may already have been said again.
         val recent = (maxOf(0, word - JUMP_LOOKBACK) until word).sumOf { words[it].length } * 2 + MARGIN
         for (w in maxOf(0, word - JUMP_LOOKBACK) until word) {
-          if (check(w, heardCount - recent, margin = 0)) recited(w)
+          check(w, heardCount - recent, margin = 0)?.let(::recited)
         }
         reachedAt.clear()
         reachedAt[word] = heardCount
@@ -255,8 +259,8 @@ class PhonemeFollower(
     trimHeard()
   }
 
-  private fun recited(word: Int) {
-    events += Event.Recited(word)
+  private fun recited(event: Event.Recited) {
+    events += event
     lastRecitedAt = heardCount
     missedSince.clear()
   }
@@ -278,43 +282,99 @@ class PhonemeFollower(
   }
 
   /**
-   * Whether what was heard since [reached] (when the reader came to [word], less [margin]
-   * phonemes) contains it, close enough.
+   * [word] as recited if what was heard since [reached] (when the reader came to it, less [margin]
+   * phonemes) contains it, close enough; null if not.
    */
-  private fun check(word: Int, reached: Int?, margin: Int = MARGIN): Boolean {
+  private fun check(word: Int, reached: Int?, margin: Int = MARGIN): Event.Recited? {
     val expected = words[word]
-    if (expected.isEmpty()) return true
+    if (expected.isEmpty()) return Event.Recited(word)
     val from = maxOf(heardOffset, (reached ?: heardCount) - margin)
-    val span = heard.substring(from - heardOffset)
-    return alignedCost(span, word) / expected.length <= config.maxWordCost
+    val alignment = align(heard.substring(from - heardOffset), word)
+    if (alignment.cost / expected.length > config.maxWordCost) return null
+    return Event.Recited(word, wrongVowels = alignment.hasWrongVowel(word))
   }
+
+  /**
+   * What was heard for each phoneme of a word: the index in the heard span of the phoneme it was
+   * heard as (-1 if not heard), and the cost of that alignment.
+   */
+  private class Alignment(val span: String, val heardAs: IntArray, val cost: Double)
 
   /**
    * The cheapest alignment of [word]'s phonemes to part of [span] (anything before and after it
    * free), with the same costs as following.
    */
-  private fun alignedCost(span: String, word: Int): Double {
+  private fun align(span: String, word: Int): Alignment {
     val start = wordStarts[word]
     val n = words[word].length
-    var column = DoubleArray(n + 1)
-    var nextColumn = DoubleArray(n + 1)
-    for (k in 1..n) column[k] = column[k - 1] + deletion(start + k - 1)
-    var best = column[n]
-    var last = 0.toChar()
-    for (c in span) {
-      val insertion = if (c == last) config.repeatInsertionCost else config.insertionCost
-      last = c
-      nextColumn[0] = 0.0 // free start
+    val m = span.length
+    // costs[i][k]: the first k phonemes of the word aligned to heard phonemes ending at i
+    val costs = Array(m + 1) { DoubleArray(n + 1) }
+    for (k in 1..n) costs[0][k] = costs[0][k - 1] + deletion(start + k - 1)
+    for (i in 1..m) {
+      val c = span[i - 1]
+      val insertion = if (i > 1 && c == span[i - 2]) config.repeatInsertionCost else config.insertionCost
+      costs[i][0] = 0.0 // free start
       for (k in 1..n) {
-        nextColumn[k] = min(
-          min(column[k] + insertion, column[k - 1] + substitution(c, reference[start + k - 1])),
-          nextColumn[k - 1] + deletion(start + k - 1),
+        costs[i][k] = min(
+          min(costs[i - 1][k] + insertion, costs[i - 1][k - 1] + substitution(c, reference[start + k - 1])),
+          costs[i][k - 1] + deletion(start + k - 1),
         )
       }
-      if (nextColumn[n] < best) best = nextColumn[n] // free end
-      column = nextColumn.also { nextColumn = column }
     }
-    return best
+    var end = 0 // free end
+    for (i in 1..m) if (costs[i][n] < costs[end][n]) end = i
+    val heardAs = IntArray(n) { -1 }
+    var i = end
+    var k = n
+    while (k > 0) {
+      val here = costs[i][k]
+      when {
+        i > 0 && here == costs[i - 1][k - 1] + substitution(span[i - 1], reference[start + k - 1]) -> {
+          heardAs[k - 1] = i - 1
+          i--
+          k--
+        }
+        here == costs[i][k - 1] + deletion(start + k - 1) -> k--
+        else -> i--
+      }
+    }
+    return Alignment(span, heardAs, costs[end][n])
+  }
+
+  /**
+   * Whether a letter of [word] heard as itself (or one alike) was heard with another vowel than
+   * its own: the short vowels heard from it up to the next letter heard, or the long vowel heard
+   * in their place. Long vowels and their lengths are left to the alignment cost, and a last
+   * letter heard without its vowel is a pause (waqf), not a mistake.
+   */
+  private fun Alignment.hasWrongVowel(word: Int): Boolean {
+    val phonemes = words[word]
+    val letters = phonemes.indices.filter { !isShortVowel(phonemes[it]) }
+    letters.forEachIndexed { n, k ->
+      val at = heardAs[k]
+      if (at < 0 || phonemes[k] in LONG_VOWELS) return@forEachIndexed
+      if (substitution(span[at], phonemes[k]) == config.substitutionCost) return@forEachIndexed
+      val expected = if (k + 1 < phonemes.length && isShortVowel(phonemes[k + 1])) phonemes[k + 1] else null
+      // A letter without a vowel that is doubled (shadda, or merged into the next word's first
+      // letter) may be heard once, with its twin's vowel.
+      val twin = letters.getOrNull(n + 1)?.let { canonical(phonemes[it]) == canonical(phonemes[k]) } ?: true
+      if (expected == null && twin) return@forEachIndexed
+      // Up to the next letter heard (or the next one's place); letters repeated for a shadda
+      // or ghunna are part of this one.
+      val nextLetter = letters.drop(n + 1).firstOrNull { heardAs[it] >= 0 }
+      val until = nextLetter?.let { heardAs[it] } ?: minOf(span.length, at + 3)
+      var vowel: Char? = null
+      for (j in at + 1 until until) {
+        val c = span[j]
+        if (isShortVowel(c)) { vowel = c; break }
+        if (c in LONG_VOWELS) { vowel = LONG_VOWELS.getValue(c); break }
+        if (canonical(c) != canonical(span[at])) break
+      }
+      val last = letters.last() == k
+      if (vowel != expected && !(last && vowel == null)) return true
+    }
+    return false
   }
 
   private fun trimHeard() {
@@ -349,7 +409,12 @@ class PhonemeFollower(
     const val JUMP_LOOKBACK = 4
     /** Heard phonemes no longer needed are dropped in batches of this many. */
     const val KEEP = 256
-    const val QALQALA = 'چ' // ڇ
+    const val QALQALA = 'ڇ' // ڇ
+
+    fun isShortVowel(c: Char) = c == 'َ' || c == 'ُ' || c == 'ِ' // fatha, damma, kasra
+
+    /** Long vowels, by the short vowel they lengthen. */
+    val LONG_VOWELS = mapOf('ا' to 'َ', 'ۥ' to 'ُ', 'ۦ' to 'ِ')
 
     /** Glyphs of the phonetic script for the same sound. */
     fun canonical(c: Char): Char = when (c) {

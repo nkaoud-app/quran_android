@@ -26,6 +26,8 @@ data class MushafRecitationProgress(
   val recited: Set<Int> = emptySet(),
   /** Words passed without being said right. */
   val missed: Set<Int> = emptySet(),
+  /** Recited words with a letter said with the wrong vowel (harakah). */
+  val wrongVowels: Set<Int> = emptySet(),
   /** Whether words not yet recited are hidden (reciting from memory). */
   val hideUnrecited: Boolean = false,
 ) {
