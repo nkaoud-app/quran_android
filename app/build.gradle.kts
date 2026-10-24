@@ -1,6 +1,7 @@
 import com.android.build.api.variant.HasUnitTest
 import com.android.build.api.variant.ResValue
 import net.ltgt.gradle.errorprone.ErrorProneOptions
+import java.net.URI
 import java.util.Locale
 
 plugins {
@@ -155,7 +156,7 @@ val sherpaOnnxAar = File(projectDir, "libs/sherpa-onnx-$sherpaOnnxVersion.aar")
 if (!sherpaOnnxAar.exists()) {
   sherpaOnnxAar.parentFile.mkdirs()
   val partial = File(sherpaOnnxAar.path + ".part")
-  java.net.URI(
+  URI(
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaOnnxVersion/sherpa-onnx-$sherpaOnnxVersion.aar"
   ).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
   check(partial.renameTo(sherpaOnnxAar)) { "could not save $sherpaOnnxAar" }
