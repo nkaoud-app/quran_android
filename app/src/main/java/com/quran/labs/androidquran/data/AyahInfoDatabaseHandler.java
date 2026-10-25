@@ -246,6 +246,7 @@ public class AyahInfoDatabaseHandler {
       // left), so the pause marks in between belong to the word before them and are hidden and
       // colored with it.
       final List<WordBox> boxes = new ArrayList<>();
+      final List<int[]> ayahNumbers = new ArrayList<>();
       WordBox last = null;
       int word = 0;
       for (int i = 0; i < rows.size(); i++) {
@@ -258,6 +259,9 @@ public class AyahInfoDatabaseHandler {
         final boolean pauseMark = !ayahNumber && row[7] - row[5] <= maxMarkWidth;
         if (!ayahNumber && !pauseMark) {
           word++;
+        }
+        if (row[0] == page && ayahNumber) {
+          ayahNumbers.add(row);
         }
         if (row[0] != page || ayahNumber || word == 0) {
           last = null;
@@ -304,6 +308,20 @@ public class AyahInfoDatabaseHandler {
         // only when no ayah number follows it on the line
         if (box.left <= lines.get(box.line)[2]) {
           box.left = Math.min(box.left, textLeft - edgePadding);
+        }
+      }
+
+      // Ayah numbers stay visible: a word's box (a stroke reaching into the number next to it, or a
+      // line's first word reaching for the edge past a number starting the line) stops at them.
+      for (int[] number : ayahNumbers) {
+        for (WordBox box : boxes) {
+          if (box.line == number[1] && box.left < number[7] && box.right > number[5]) {
+            if (box.left + box.right > number[5] + number[7]) {
+              box.left = Math.max(box.left, number[7]);
+            } else {
+              box.right = Math.min(box.right, number[5]);
+            }
+          }
         }
       }
 
