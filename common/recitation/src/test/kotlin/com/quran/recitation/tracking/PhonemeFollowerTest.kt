@@ -24,6 +24,8 @@ class PhonemeFollowerTest {
     val everMissed = sortedSetOf<Int>()
     val wrongVowels = sortedSetOf<Int>()
     val repeats = ArrayList<Int>()
+    /** The words recited, in the order they were marked. */
+    val recitedOrder = ArrayList<Int>()
     var currentWord = -1
 
     fun ayahWords(ayah: Int) = ayahOf.indices.filter { ayahOf[it] == ayah }
@@ -36,7 +38,7 @@ class PhonemeFollowerTest {
     val ayahs = generateSequence(1) { it + 1 }.map { phonemes["$sura:$it"] }.takeWhile { it != null }.filterNotNull().toList()
     val replay = Replay(ayahs.flatMapIndexed { i, words -> List(words.size) { i + 1 } })
     val openings = listOfNotNull(phonemes["istiadha"], phonemes["basmala"]?.takeIf { sura != 1 && sura != 9 })
-    val follower = PhonemeFollower(ayahs.flatten(), replay.ayahOf.indexOf(firstAyah), openings)
+    val follower = PhonemeFollower(ayahs.flatten(), replay.ayahOf, replay.ayahOf.indexOf(firstAyah), openings)
     var tokens = listOf<String>()
     for (line in lines.drop(1)) {
       val parts = line.split(' ')
@@ -45,6 +47,7 @@ class PhonemeFollowerTest {
         when (event) {
           is PhonemeFollower.Event.Recited -> {
             replay.recited += event.word
+            replay.recitedOrder += event.word
             replay.missed -= event.word
             if (event.wrongVowels) replay.wrongVowels += event.word else replay.wrongVowels -= event.word
           }
@@ -54,7 +57,6 @@ class PhonemeFollowerTest {
             replay.recited -= event.word
             replay.wrongVowels -= event.word
           }
-          is PhonemeFollower.Event.Skipped -> replay.missed -= event.word
           is PhonemeFollower.Event.Repeat -> {
             replay.repeats += event.word
             replay.recited.removeAll { it >= event.word }
@@ -89,12 +91,38 @@ class PhonemeFollowerTest {
   }
 
   @Test
-  fun `follows the reader past a skipped ayah`() {
-    val replay = replay("mulk-skip.txt")
-    assertThat(replay.recited).containsAtLeastElementsIn((1..2).flatMap(replay::ayahWords) + (4..10).flatMap(replay::ayahWords))
-    // ayah 3 was not recited: its words are not marked recited, nor missed
-    assertThat(replay.recited.intersect(replay.ayahWords(3).toSet())).isEmpty()
+  fun `a skipped ayah is missed and holds the reader there`() {
+    val replay = replay("mulk-skip.txt") // ayahs 1, 2, then 4 to 10
+    assertThat(replay.recited).containsExactlyElementsIn((1..2).flatMap(replay::ayahWords))
+    // ayahs 4 to 10 were recited, but not after ayah 3
+    assertThat(replay.missed).containsExactlyElementsIn(replay.ayahWords(3))
+    assertThat(replay.currentWord).isEqualTo(replay.ayahWords(3).first())
+  }
+
+  @Test
+  fun `a skipped ayah is recited when the reader comes back to it, then the ones after it`() {
+    val replay = replay("mulk-skip-return.txt") // ayahs 1, 2, 4, 3, 4, 5
+    assertThat(replay.everMissed).containsAtLeastElementsIn(replay.ayahWords(3))
+    assertThat(replay.recited).containsExactlyElementsIn((1..5).flatMap(replay::ayahWords))
     assertThat(replay.missed).isEmpty()
+    assertRecitedInOrder(replay, 3, 4)
+  }
+
+  /** Minshawi's al-Mulk 1-2, then Nuh 15-16 (which starts like al-Mulk 3), then al-Mulk 3-4. */
+  @Test
+  fun `an ayah recited from elsewhere is missed until the reader comes back to it`() {
+    val replay = replay("mulk-drift.txt")
+    assertThat(replay.everMissed.intersect(replay.ayahWords(3).toSet())).isNotEmpty()
+    assertThat(replay.recited).containsExactlyElementsIn((1..4).flatMap(replay::ayahWords))
+    assertThat(replay.missed).isEmpty()
+    assertRecitedInOrder(replay, 3, 4)
+  }
+
+  /** No word of [later] was recited before the last of [earlier]. */
+  private fun assertRecitedInOrder(replay: Replay, earlier: Int, later: Int) {
+    val lastEarlier = replay.recitedOrder.indexOfLast { replay.ayahOf[it] == earlier }
+    val firstLater = replay.recitedOrder.indexOfFirst { replay.ayahOf[it] == later }
+    assertThat(firstLater).isGreaterThan(lastEarlier)
   }
 
   @Test

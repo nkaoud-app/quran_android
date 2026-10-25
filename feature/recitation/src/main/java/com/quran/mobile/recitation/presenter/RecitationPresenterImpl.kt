@@ -230,7 +230,10 @@ class RecitationPresenterImpl @Inject constructor(
       }
       val openings = RecitationPhonemes.openings(activity, from.sura)
       preparing = null
-      listen(activity, scope, progress.words.map { it.phonemes }, startWord, openings, from)
+      listen(
+        activity, scope, progress.words.map { it.phonemes }, progress.words.map { it.word.ayah.ayah },
+        startWord, openings, from,
+      )
     }
   }
 
@@ -262,6 +265,7 @@ class RecitationPresenterImpl @Inject constructor(
     activity: Activity,
     scope: CoroutineScope,
     phonemes: List<String>,
+    ayahs: List<Int>,
     startWord: Int,
     openings: List<List<String>>,
     from: SuraAyah,
@@ -274,7 +278,7 @@ class RecitationPresenterImpl @Inject constructor(
       try {
         val recitation = LivePhonemeRecitation(
           recognizerFactory, ZipformerModel.file(activity), ZipformerModel.tokens(activity),
-          phonemes, startWord, openings, FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
+          phonemes, ayahs, startWord, openings, FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
         )
         recitation.run(
           onListening = { toast(activity, "Listening… recite from ayah ${from.ayah}.") },
@@ -307,7 +311,6 @@ class RecitationPresenterImpl @Inject constructor(
             recited -= event.word
             wrongVowels -= event.word
           }
-          is PhonemeFollower.Event.Skipped -> missed -= event.word
           is PhonemeFollower.Event.Repeat -> {
             recited.removeAll { it >= event.word }
             missed.removeAll { it >= event.word }

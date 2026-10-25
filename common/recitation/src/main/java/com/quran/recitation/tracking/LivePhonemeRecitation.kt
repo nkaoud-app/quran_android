@@ -19,6 +19,8 @@ class LivePhonemeRecitation(
   private val model: File,
   private val tokens: File,
   private val words: List<String>,
+  /** The ayah of each word. */
+  private val ayahs: List<Int>,
   private val startWord: Int,
   private val openings: List<List<String>>,
   private val config: FollowerConfig = FollowerConfig(),
@@ -33,7 +35,7 @@ class LivePhonemeRecitation(
    */
   @RequiresPermission(Manifest.permission.RECORD_AUDIO)
   suspend fun run(onListening: () -> Unit, onUpdate: (Update) -> Unit): Unit = withContext(Dispatchers.IO) {
-    val follower = PhonemeFollower(words, startWord, openings, config)
+    val follower = PhonemeFollower(words, ayahs, startWord, openings, config)
     recognizerFactory.create(model, tokens, THREADS).use { recognizer ->
       val bufferSize = maxOf(
         AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),

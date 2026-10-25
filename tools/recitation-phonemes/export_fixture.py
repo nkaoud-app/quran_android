@@ -1,11 +1,12 @@
 """Records what the recognizer hears of a recitation, for PhonemeFollowerTest.
 
   python export_fixture.py SPIKE_DIR MODEL_DIR OUT.txt --sura 67 [--ayahs 1 10] [--drop 2] [--repeat 2]
+  python export_fixture.py SPIKE_DIR MODEL_DIR OUT.txt --sura 67 --order 1 2 4 3 4 5 20:115
 
 SPIKE_DIR is tools/recitation-spike, for Minshawi's recitation and its word timings. MODEL_DIR
 holds Quran-Lab's zipformer_p_arabic_v3.int8.onnx and its tokens.txt, run with sherpa-onnx as the
 app runs it (480 ms chunks after 480 ms of silence). --drop leaves an ayah out, --repeat recites
-it twice.
+it twice; --order recites the ayahs given, in that order (SURA:AYAH for another sura's).
 
 Each output line is the recognizer's tokens after one chunk: how many of the previous line's
 tokens it keeps, then its other tokens (space separated). The first line is "sura first_ayah".
@@ -27,29 +28,39 @@ def main():
   parser.add_argument("--ayahs", type=int, nargs=2)
   parser.add_argument("--drop", type=int)
   parser.add_argument("--repeat", type=int)
+  parser.add_argument("--order", nargs="+")
   args = parser.parse_args()
   sys.path.insert(0, args.spike_dir)
   from spike.data import SAMPLE_RATE, sura_audio, sura_words
 
-  audio = sura_audio(args.sura)
-  words = sura_words(args.sura)
-  ayahs = sorted({w.ayah for w in words})
-  first, last = args.ayahs or (ayahs[0], ayahs[-1])
+  audio = {args.sura: sura_audio(args.sura)}
+  words = {args.sura: sura_words(args.sura)}
+  ayahs = sorted({w.ayah for w in words[args.sura]})
+  order = [(int(a.split(":")[0]), int(a.split(":")[1])) if ":" in a else (args.sura, int(a))
+           for a in args.order] if args.order else None
+  first, last = (order[0][1], order[-1][1]) if order else args.ayahs or (ayahs[0], ayahs[-1])
 
-  def span(ayah):  # ayah audio from its first word's start to the next ayah's start
-    start = min(w.start for w in words if w.ayah == ayah)
-    later = [w.start for w in words if w.ayah == ayah + 1]
-    end = later[0] if later else max(w.end for w in words if w.ayah == ayah) + 0.5
-    return audio[int(start * SAMPLE_RATE):int(end * SAMPLE_RATE)]
+  def span(sura, ayah):  # ayah audio from its first word's start to the next ayah's start
+    if sura not in audio:
+      audio[sura], words[sura] = sura_audio(sura), sura_words(sura)
+    ws = words[sura]
+    start = min(w.start for w in ws if w.ayah == ayah)
+    later = [w.start for w in ws if w.ayah == ayah + 1]
+    end = later[0] if later else max(w.end for w in ws if w.ayah == ayah) + 0.5
+    return audio[sura][int(start * SAMPLE_RATE):int(end * SAMPLE_RATE)]
 
-  opening = audio[:int(min(w.start for w in words if w.ayah == first) * SAMPLE_RATE)] if first == 1 else np.zeros(0, np.float32)
+  start = min(w.start for w in words[args.sura] if w.ayah == first)
+  opening = audio[args.sura][:int(start * SAMPLE_RATE)] if first == 1 else np.zeros(0, np.float32)
   pieces = [opening]
-  for ayah in range(first, last + 1):
-    if ayah == args.drop:
-      continue
-    pieces.append(span(ayah))
-    if ayah == args.repeat:
-      pieces.append(span(ayah))
+  if order:
+    pieces += [span(sura, ayah) for sura, ayah in order]
+  else:
+    for ayah in range(first, last + 1):
+      if ayah == args.drop:
+        continue
+      pieces.append(span(args.sura, ayah))
+      if ayah == args.repeat:
+        pieces.append(span(args.sura, ayah))
   pieces.append(np.zeros(SAMPLE_RATE, np.float32))
   recitation = np.concatenate(pieces).astype(np.float32)
 
