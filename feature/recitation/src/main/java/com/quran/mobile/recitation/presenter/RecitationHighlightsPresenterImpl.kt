@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 /**
- * Shows the recitation session on a mushaf page: recited words turn green (orange with a wrong
+ * Shows the recitation session on a mushaf page: recited words turn green (cyan with a wrong
  * vowel), words passed without being said right red, the word the reader is on is highlighted, and words not yet recited can
  * be hidden (keeping the ayah numbers). Pages taller than the screen scroll to keep the word the
  * reader is on in view.
