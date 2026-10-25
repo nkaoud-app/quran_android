@@ -2,13 +2,13 @@
 <resources>
   <string name="recitation_microphone_needed">يلزم إذن الميكروفون لمتابعة تلاوتك.</string>
   <string name="recitation_strictness_title">مدى دقة التحقق من الكلمات</string>
-  <string name="recitation_strictness_easy">سهل (للمبتدئين والأماكن كثيرة الضوضاء)</string>
-  <string name="recitation_strictness_normal">عادي (للمراجعة اليومية)</string>
-  <string name="recitation_strictness_strict">صارم (لاختبار الحفظ)</string>
+  <string name="recitation_strictness_easy">سهل</string>
+  <string name="recitation_strictness_normal">عادي</string>
+  <string name="recitation_strictness_strict">صارم</string>
   <string name="recitation_model_title">متابعة التلاوة</string>
-  <string name="recitation_model_offer">تحتاج متابعة تلاوتك إلى نموذج للتعرّف على التلاوة (%1$s) يعمل على هذا الجهاز.\n\nقد تخطئ الملاحظات الآلية، ولا تغني عن القراءة على معلّم متقن.\n\nهل تريد تنزيله الآن؟</string>
+  <string name="recitation_model_offer">تحتاج متابعة تلاوتك إلى ملفات للتعرّف على التلاوة (%1$s) يعمل على هذا الجهاز.\n\nقد يخطئ المدقق الآلي، ولا يغني عن القراءة على شيخ.\n\nهل تريد تنزيله الآن؟</string>
   <string name="recitation_model_download">تنزيل</string>
-  <string name="recitation_model_downloading">جارٍ تنزيل نموذج التلاوة</string>
+  <string name="recitation_model_downloading">جارٍ تنزيل ملفات التلاوة</string>
   <string name="recitation_model_starting">جارٍ البدء…</string>
   <string name="recitation_model_percent">%1$d%%</string>
   <string name="recitation_model_megabytes">%1$d ميغابايت</string>
