@@ -10,10 +10,12 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.annotation.StringRes
 import com.quran.data.core.QuranInfo
 import com.quran.data.di.QuranScope
 import com.quran.data.model.AyahWord
 import com.quran.data.model.SuraAyah
+import com.quran.mobile.recitation.R
 import com.quran.recitation.common.Recitation
 import com.quran.recitation.common.RecitationSession
 import com.quran.recitation.common.RecitedAyah
@@ -128,7 +130,7 @@ class RecitationPresenterImpl @Inject constructor(
     if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
       start(activity, ayah)
     } else {
-      toast(activity, "Microphone permission is needed to follow your recitation.")
+      toast(activity, activity.getString(R.string.recitation_microphone_needed))
     }
   }
 
@@ -141,8 +143,8 @@ class RecitationPresenterImpl @Inject constructor(
   private fun chooseStrictness(activity: Activity) {
     val preferences = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     dialog = AlertDialog.Builder(activity)
-      .setTitle("How strictly words are checked")
-      .setSingleChoiceItems(Strictness.entries.map { it.label }.toTypedArray(), strictness(activity).ordinal) { chosen, which ->
+      .setTitle(R.string.recitation_strictness_title)
+      .setSingleChoiceItems(Strictness.entries.map { activity.getString(it.label) }.toTypedArray(), strictness(activity).ordinal) { chosen, which ->
         preferences.edit().putString(KEY_STRICTNESS, Strictness.entries[which].name).apply()
         chosen.dismiss()
       }
@@ -157,13 +159,9 @@ class RecitationPresenterImpl @Inject constructor(
 
   private fun offerDownload(activity: Activity, ayah: SuraAyah) {
     dialog = AlertDialog.Builder(activity)
-      .setTitle("Recitation tracking")
-      .setMessage(
-        "Following your recitation needs a recitation model (${ZipformerModel.DOWNLOAD_SIZE}), " +
-          "which runs on this device. Automatic feedback can be wrong and does not replace " +
-          "reciting to a qualified teacher. Download it now?"
-      )
-      .setPositiveButton("Download") { _, _ -> download(activity, ayah) }
+      .setTitle(R.string.recitation_model_title)
+      .setMessage(activity.getString(R.string.recitation_model_offer, ZipformerModel.DOWNLOAD_SIZE))
+      .setPositiveButton(R.string.recitation_model_download) { _, _ -> download(activity, ayah) }
       .setNegativeButton(android.R.string.cancel, null)
       .show()
   }
@@ -171,8 +169,8 @@ class RecitationPresenterImpl @Inject constructor(
   private fun download(activity: Activity, ayah: SuraAyah) {
     val scope = scope ?: return
     val progress = AlertDialog.Builder(activity)
-      .setTitle("Downloading the recitation model")
-      .setMessage("Starting…")
+      .setTitle(R.string.recitation_model_downloading)
+      .setMessage(activity.getString(R.string.recitation_model_starting))
       .setCancelable(false)
       .setNegativeButton(android.R.string.cancel) { _, _ ->
         downloading?.cancel()
@@ -183,7 +181,13 @@ class RecitationPresenterImpl @Inject constructor(
     downloading = scope.launch {
       val failure = try {
         ZipformerModel.download(activity) { percent, bytes ->
-          progress.setMessage(if (percent >= 0) "$percent%" else "${bytes / 1_000_000} MB")
+          progress.setMessage(
+            if (percent >= 0) {
+              activity.getString(R.string.recitation_model_percent, percent.toInt())
+            } else {
+              activity.getString(R.string.recitation_model_megabytes, (bytes / 1_000_000).toInt())
+            }
+          )
         }
         null
       } catch (e: Exception) {
@@ -196,7 +200,7 @@ class RecitationPresenterImpl @Inject constructor(
       if (failure == null) {
         startOrStopRecitation({ ayah })
       } else {
-        toast(activity, "Model download failed (${failure.message}). Check the connection and try again.")
+        toast(activity, activity.getString(R.string.recitation_model_failed, failure.message))
       }
     }
   }
@@ -207,7 +211,7 @@ class RecitationPresenterImpl @Inject constructor(
       val progress = state.progress.value?.takeIf {
         eventPresenter.hasRecitationSession() && it.sura == requested.sura
       } ?: newSession(activity, requested) ?: run {
-        toast(activity, "Arabic Quran data is not available. Download it from Quran data settings.")
+        toast(activity, activity.getString(R.string.recitation_no_arabic))
         preparing = null
         return@launch
       }
@@ -281,12 +285,12 @@ class RecitationPresenterImpl @Inject constructor(
           phonemes, ayahs, startWord, openings, FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
         )
         recitation.run(
-          onListening = { toast(activity, "Listening… recite from ayah ${from.ayah}.") },
+          onListening = { toast(activity, activity.getString(R.string.recitation_listening, from.ayah)) },
           onUpdate = { update -> applyUpdate(activity, update, shownAyah)?.let { shownAyah = it } },
         )
       } catch (e: Exception) {
         if (e !is CancellationException) {
-          toast(activity, "Recitation tracking stopped: ${e.message}")
+          toast(activity, activity.getString(R.string.recitation_stopped, e.message))
           stopListening()
         }
       }
@@ -322,7 +326,7 @@ class RecitationPresenterImpl @Inject constructor(
     }
     val progress = state.progress.value ?: return null
     if (progress.currentWord >= progress.words.size) {
-      toast(activity, "Surah complete.")
+      toast(activity, activity.getString(R.string.recitation_sura_complete))
       stopListening()
     }
     // Turn the page once the reader moves on to an ayah on the next one.
@@ -348,10 +352,10 @@ class RecitationPresenterImpl @Inject constructor(
   }
 
   /** How close a recited word must be to count as recited (average cost per phoneme). */
-  private enum class Strictness(val label: String, val maxWordCost: Double) {
-    EASY("Easy (beginners, noisy rooms)", 0.5),
-    NORMAL("Normal (everyday practice)", 0.35),
-    STRICT("Strict (memorization tests)", 0.25),
+  private enum class Strictness(@StringRes val label: Int, val maxWordCost: Double) {
+    EASY(R.string.recitation_strictness_easy, 0.5),
+    NORMAL(R.string.recitation_strictness_normal, 0.35),
+    STRICT(R.string.recitation_strictness_strict, 0.25),
   }
 
   private class MushafSession(

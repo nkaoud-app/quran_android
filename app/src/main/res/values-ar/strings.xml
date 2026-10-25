@@ -313,7 +313,7 @@
   <string name="about_quran_enc" translatable="false">موسوعة القرآن الكريم</string>
   <string name="about_quran_enc_summary">الترجمات لعدد من اللغات</string>
   <string name="about_tanzil" translatable="false">تنزيل</string>
-  <string name="about_tanzil_summary">ترجمات لبعض اللغات</string>
+  <string name="about_tanzil_summary">ترجمات لبعض اللغات، والنص القرآني الذي تعتمد عليه متابعة التلاوة</string>
   <string name="please_wait">الرجاء الانتظار…</string>
   <string name="exported_data">صدرت البيانات إلى %1$s</string>
   <string name="about_noorhidayat_summary">خط نورحِرا وترجمة مفتي تقي</string>
