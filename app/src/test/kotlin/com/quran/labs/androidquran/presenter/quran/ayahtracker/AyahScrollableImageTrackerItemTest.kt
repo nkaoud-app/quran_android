@@ -6,6 +6,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.view.View.MeasureSpec
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.quran.data.core.QuranInfo
 import com.quran.data.model.highlight.HighlightType
 import com.quran.labs.androidquran.base.TestApplication
@@ -73,7 +74,11 @@ class AyahScrollableImageTrackerItemTest {
     item.onHighlightAyah(PAGE, 2, 6, 2, TYPE, true)
     assertThat(layout.scrolledTo).hasSize(1)
     // the word's line (image 1500..1600, shown at 0.8 scale) ends up near the top of the screen
-    assertThat(layout.scrolledTo.single()).isIn(1100..1200)
+    val imageView = layout.getImageView()
+    assertWithMessage(
+      "view ${imageView.width}x${imageView.height}, matrix ${imageView.imageMatrix}, " +
+        "drawable ${imageView.drawable.bounds}, padding ${imageView.paddingTop}"
+    ).that(layout.scrolledTo.single()).isIn(1100..1200)
   }
 
   @Test
