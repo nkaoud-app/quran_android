@@ -130,6 +130,21 @@ class PhonemeFollowerTest {
     assertRecitedInOrder(replay, 8, 9)
   }
 
+  /**
+   * Minshawi's al-Kahf 1-16, then al-Ma'un (107) instead of al-Kahf 17, a long ayah: it is missed,
+   * and the reader is held at its start.
+   */
+  @Test
+  fun `a long ayah skipped for another sura is missed from its start`() {
+    val replay = replay("kahf-to-maun.txt")
+    val ayah17 = replay.ayahWords(17)
+    assertThat(replay.recited).containsExactlyElementsIn((1..16).flatMap(replay::ayahWords))
+    assertThat(replay.missed).containsExactlyElementsIn(ayah17)
+    assertThat(replay.currentWord).isEqualTo(ayah17.first())
+    val reached = replay.expected.indexOfFirst { it >= ayah17.first() }
+    assertThat(replay.expected.drop(reached).minOrNull()).isEqualTo(ayah17.first())
+  }
+
   /** No word of [later] was recited before the last of [earlier]. */
   private fun assertRecitedInOrder(replay: Replay, earlier: Int, later: Int) {
     val lastEarlier = replay.recitedOrder.indexOfLast { replay.ayahOf[it] == earlier }

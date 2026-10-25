@@ -137,10 +137,12 @@ class PhonemeFollower(
   /** Where the reader is: the word whose next phoneme is expected (-1 before they start). */
   private var position = -1
 
-  // Since the reader last made progress (recited a word, or went on to the next): sounds heard
-  // then, and whether the rest of the expected word's ayah was missed since.
+  // Since the reader last made progress (recited the expected word, or a few earlier ones in a
+  // row): sounds heard then, and whether the rest of the expected word's ayah was missed since.
   private var progressAt = 0
   private var stuck = false
+  /** Earlier words passed and recited again in a row (a repeat, rather than chance matches). */
+  private var againInRow = 0
 
   // The words of an ayah marked in order: the ayah's end, how many and how many missed, and the
   // first missed.
@@ -279,17 +281,26 @@ class PhonemeFollower(
     val since = lastRecitedAt
     for (w in previous until word) {
       if (w > currentWord) break
+      val reached = reachedAt[w]
       val recited = when {
-        !jump -> check(w, reachedAt[w])
+        !jump -> check(w, reached)
         w >= word - JUMP_LOOKBACK -> check(w, since, margin = 0)
         else -> null
       }
       reachedAt.remove(w)
       if (w < currentWord) {
-        recited?.let(::recitedAgain)
+        if (recited != null) {
+          recitedAgain(recited)
+          if (++againInRow >= REPEAT_PROGRESS) progressAt = soundsHeard
+        } else {
+          againInRow = 0
+        }
       } else {
+        // Once the ayah was found recited from elsewhere, a word missed is a slip only when the
+        // reader is heard going on with the next one; otherwise they are still elsewhere.
+        if (recited == null && stuck && (w + 1 >= ayahEnds[w] || check(w + 1, reached) == null)) break
         if (recited != null) recited(recited) else missed(w)
-        moveOn(w + 1)
+        moveOn(w + 1, progress = recited != null)
         if (w + 1 == ayahEnds[w]) leftAyah()
       }
     }
@@ -299,6 +310,7 @@ class PhonemeFollower(
 
   /** The reader went back to [word], to recite earlier words again. */
   private fun goBack(word: Int) {
+    againInRow = 0
     // The jump back is clear only some way into the repeat (repeated passages often start
     // alike): the last few words before it may already have been said again.
     val from = maxOf(0, word - JUMP_LOOKBACK)
@@ -311,7 +323,7 @@ class PhonemeFollower(
       for (w in currentWord until word) {
         val recited = if (w >= from) check(w, heardCount - recent, margin = 0) else null
         if (recited != null) recited(recited) else missed(w)
-        moveOn(w + 1)
+        moveOn(w + 1, progress = recited != null)
       }
     }
     reachedAt.clear()
@@ -328,7 +340,6 @@ class PhonemeFollower(
   private fun recitedAgain(event: Event.Recited) {
     events += event
     lastRecitedAt = heardCount
-    progressAt = soundsHeard
   }
 
   private fun missed(word: Int) {
@@ -350,10 +361,15 @@ class PhonemeFollower(
     }
   }
 
-  private fun moveOn(word: Int) {
+  /** The word expected next is now [word]; [progress] when the reader recited the one before. */
+  private fun moveOn(word: Int, progress: Boolean) {
+    if (progress) progressAt = soundsHeard
+    if (progress || word >= words.size || currentWord !in words.indices ||
+      ayahEnds[word] != ayahEnds[currentWord]
+    ) {
+      stuck = false
+    }
     currentWord = word
-    progressAt = soundsHeard
-    stuck = false
   }
 
   /**
@@ -365,22 +381,27 @@ class PhonemeFollower(
     if (passEnd < 0) return
     if (passMissed * 2 > passWords) {
       for (w in passFirstMissed until passEnd) events += Event.Missed(w)
-      moveOn(passFirstMissed)
+      currentWord = passFirstMissed
+      stuck = true // missed already
     }
     passEnd = -1
   }
 
   /**
-   * Misses the rest of the expected word's ayah when the reader has said more than is left of it
-   * (by [STUCK_RATIO], and [STUCK_MARGIN] sounds) without making progress: they are reciting
-   * something else. It is expected still.
+   * When the reader has said more than is left of the expected word's ayah (by [STUCK_RATIO], and
+   * [STUCK_MARGIN] sounds), or [STUCK_MAX] sounds, without reciting a word, they are reciting
+   * something else: the ayah is
+   * missed from its first word missed so far (or the expected one) on, and expected again from
+   * there.
    */
   private fun missIfStuck() {
     val word = currentWord
     if (stuck || word < 0 || word >= words.size) return
     val left = (word until ayahEnds[word]).sumOf { wordSounds[it] }
-    if (soundsHeard - progressAt > STUCK_RATIO * left + STUCK_MARGIN) {
-      for (w in word until ayahEnds[word]) events += Event.Missed(w)
+    if (soundsHeard - progressAt > minOf(STUCK_RATIO * left + STUCK_MARGIN, STUCK_MAX.toDouble())) {
+      val from = if (passEnd == ayahEnds[word] && passFirstMissed in 0..word) passFirstMissed else word
+      for (w in from until ayahEnds[word]) events += Event.Missed(w)
+      currentWord = from
       stuck = true
     }
   }
@@ -528,6 +549,10 @@ class PhonemeFollower(
     /** Sounds said beyond what is left of the ayah the reader is on before they are held there. */
     const val STUCK_RATIO = 1.3
     const val STUCK_MARGIN = 8
+    /** Sounds said without reciting a word (some five words) before the reader is held, at most. */
+    const val STUCK_MAX = 40
+    /** Earlier words recited again in a row for a repeat to count as progress. */
+    const val REPEAT_PROGRESS = 3
 
     /** Phonemes in [text], a phoneme repeated (lengthened) counting once. */
     fun sounds(text: String): Int = text.indices.count { it == 0 || text[it] != text[it - 1] }
