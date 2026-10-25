@@ -93,6 +93,26 @@
     </Preference>
 
     <Preference
+        android:summary="@string/about_recitation_model_summary"
+        android:title="@string/about_recitation_model"
+        app:iconSpaceReserved="false"
+        app:singleLineTitle="true">
+      <intent
+          android:action="android.intent.action.VIEW"
+          android:data="@string/about_recitation_model_url"/>
+    </Preference>
+
+    <Preference
+        android:summary="@string/about_quran_transcript_summary"
+        android:title="@string/about_quran_transcript"
+        app:iconSpaceReserved="false"
+        app:singleLineTitle="true">
+      <intent
+          android:action="android.intent.action.VIEW"
+          android:data="@string/about_quran_transcript_url"/>
+    </Preference>
+
+    <Preference
         android:summary="@string/about_noorhidayat_summary"
         android:title="@string/about_noorhidayat"
         app:iconSpaceReserved="false"
@@ -213,6 +233,15 @@
       <intent
           android:action="android.intent.action.VIEW"
           android:data="@string/about_numberPicker_url"/>
+    </Preference>
+
+    <Preference
+        android:summary="@string/about_sherpa_onnx_url"
+        android:title="@string/about_sherpa_onnx"
+        app:iconSpaceReserved="false">
+      <intent
+          android:action="android.intent.action.VIEW"
+          android:data="@string/about_sherpa_onnx_url"/>
     </Preference>
 
   </PreferenceCategory>

@@ -64,6 +64,12 @@
   <string name="about_tanzil" translatable="false">Tanzil</string>
   <string name="about_tanzil_summary">Translations for a few languages, and the Quran text recitation tracking follows</string>
   <string name="about_tanzil_url" translatable="false">http://tanzil.net</string>
+  <string name="about_recitation_model" translatable="false">Quran-Lab zipformer_p-arabic-v3</string>
+  <string name="about_recitation_model_summary">The model that hears your recitation for recitation tracking, under the Quran-Lab No-Profit License 1.2. Automatic feedback can be wrong and does not replace reciting to a qualified teacher.</string>
+  <string name="about_recitation_model_url" translatable="false">https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3</string>
+  <string name="about_quran_transcript" translatable="false">quran-transcript</string>
+  <string name="about_quran_transcript_summary">The phonetic script of the Quran text recitation tracking follows (MIT license)</string>
+  <string name="about_quran_transcript_url" translatable="false">https://github.com/obadx/quran-transcript</string>
   <string name="about_noorhidayat" translatable="false">Noorhidayat</string>
   <string name="about_noorhidayat_summary">Noorehira font and Mufti Taqi Translation</string>
   <string name="about_noorhidayat_url" translatable="false">http://www.noorehidayat.org</string>
@@ -84,6 +90,8 @@
   <string name="about_numberPicker_url" translatable="false">https://github.com/ShawnLin013/NumberPicker</string>
   <string name="about_okhttp" translatable="false">OkHttp</string>
   <string name="about_okhttp_url" translatable="false">https://github.com/square/okhttp</string>
+  <string name="about_sherpa_onnx" translatable="false">sherpa-onnx</string>
+  <string name="about_sherpa_onnx_url" translatable="false">https://github.com/k2-fsa/sherpa-onnx</string>
   <string name="about_rxjava" translatable="false">RxJava</string>
   <string name="about_rxjava_url" translatable="false">https://github.com/ReactiveX/RxJava</string>
   <string name="about_rxandroid" translatable="false">RxAndroid</string>
