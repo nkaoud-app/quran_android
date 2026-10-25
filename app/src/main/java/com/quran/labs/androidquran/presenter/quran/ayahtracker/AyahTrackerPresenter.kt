@@ -323,6 +323,8 @@ class AyahTrackerPresenter @Inject constructor(
       }
     } else if (eventType == SINGLE_TAP && recitationEventPresenter.hasRecitationSession()) {
       handleTap(event, eventType, page)
+      // still a normal click too, so the toolbars show and hide while reciting
+      readingEventPresenter.onClick()
     } else {
       // normal click
       readingEventPresenter.onClick()
