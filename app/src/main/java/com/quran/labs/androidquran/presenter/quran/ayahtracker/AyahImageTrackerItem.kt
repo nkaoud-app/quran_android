@@ -27,6 +27,7 @@ open class AyahImageTrackerItem @JvmOverloads constructor(
   val ayahView: HighlightingImageView
 ) : AyahTrackerItem(page) {
   @JvmField var coordinates: Map<String, List<AyahBounds>>? = null
+  @JvmField var wordCoordinates: Map<String, List<AyahBounds>> = emptyMap()
   @JvmField var pageGlyphsCoords: PageGlyphsCoords? = null
 
   override fun onSetPageBounds(pageCoordinates: PageCoordinates) {
@@ -51,6 +52,7 @@ open class AyahImageTrackerItem @JvmOverloads constructor(
     if (this.page == ayahCoordinates.page) {
       val coordinates = ayahCoordinates.ayahCoordinates
       this.coordinates = coordinates
+      this.wordCoordinates = ayahCoordinates.wordCoordinates
       this.pageGlyphsCoords = ayahCoordinates.glyphCoordinates
       if (coordinates.isNotEmpty()) {
         ayahView.setAyahData(ayahCoordinates)

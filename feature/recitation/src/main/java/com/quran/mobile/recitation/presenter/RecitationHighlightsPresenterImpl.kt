@@ -19,7 +19,8 @@ import kotlinx.coroutines.flow.onEach
 /**
  * Shows the recitation session on a mushaf page: recited words turn green (orange with a wrong
  * vowel), words passed without being said right red, the word the reader is on is highlighted, and words not yet recited can
- * be hidden (keeping the ayah numbers).
+ * be hidden (keeping the ayah numbers). Pages taller than the screen scroll to keep the word the
+ * reader is on in view.
  *
  * Word highlights need the page's word coordinates (see AyahInfoDatabaseHandler).
  */
@@ -75,15 +76,17 @@ class RecitationHighlightsPresenterImpl @Inject constructor(
         index in progress.recited -> result += highlight(ayah, position, RECITED)
         index in progress.missed -> result += highlight(ayah, position, MISSED)
         // Word by word, so the ayah numbers stay visible as landmarks.
-        progress.hideUnrecited && index >= progress.start -> result += highlight(ayah, position, HIDDEN)
-        index == progress.currentWord -> result += highlight(ayah, position, CURRENT_WORD)
+        progress.hideUnrecited && index >= progress.start ->
+          result += highlight(ayah, position, HIDDEN, scroll = index == progress.currentWord)
+        index == progress.currentWord -> result += highlight(ayah, position, CURRENT_WORD, scroll = true)
       }
     }
     return result
   }
 
-  private fun highlight(ayah: SuraAyah, word: Int, type: HighlightType) =
-    HighlightInfo(ayah.sura, ayah.ayah, word, type, scrollToAyah = false)
+  /** [scroll]: keep the word on the screen (pages taller than it scroll to follow the reader). */
+  private fun highlight(ayah: SuraAyah, word: Int, type: HighlightType, scroll: Boolean = false) =
+    HighlightInfo(ayah.sura, ayah.ayah, word, type, scrollToAyah = scroll)
 
   private fun List<HighlightInfo>.sameAs(other: List<HighlightInfo>): Boolean =
     size == other.size && indices.all { i ->

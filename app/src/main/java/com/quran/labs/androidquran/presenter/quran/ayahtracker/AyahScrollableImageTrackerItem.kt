@@ -1,5 +1,6 @@
 package com.quran.labs.androidquran.presenter.quran.ayahtracker
 
+import android.graphics.RectF
 import com.quran.data.core.QuranInfo
 import com.quran.data.model.AyahGlyph
 import com.quran.data.model.AyahWord
@@ -37,7 +38,9 @@ class AyahScrollableImageTrackerItem(
     scrollToAyah: Boolean
   ): Boolean {
     val coordinates = coordinates
-    if (this.page == page && scrollToAyah && coordinates != null) {
+    if (this.page == page && scrollToAyah && word >= 0) {
+      scrollToWord(sura, ayah, word)
+    } else if (this.page == page && scrollToAyah && coordinates != null) {
       val highlightBounds = ImageAyahUtils.getYBoundsForHighlight(coordinates, sura, ayah)
       if (highlightBounds != null) {
         val matrix = ayahView.imageMatrix
@@ -65,6 +68,21 @@ class AyahScrollableImageTrackerItem(
       }
     }
     return super.onHighlightAyah(page, sura, ayah, word, type, scrollToAyah)
+  }
+
+  /**
+   * Keeps a word followed word by word (recitation) on the screen: once it is above the screen or
+   * low on it, scrolls its line near the top, so the lines after it can be seen.
+   */
+  private fun scrollToWord(sura: Int, ayah: Int, word: Int) {
+    val wordBounds = wordCoordinates["$sura:$ayah:$word"]?.takeIf { it.isNotEmpty() } ?: return
+    val bounds = RectF(wordBounds.first().bounds)
+    wordBounds.forEach { bounds.union(it.bounds) }
+    ayahView.imageMatrix.mapRect(bounds)
+    val currentScrollY = quranPageLayout.currentScrollY
+    if (bounds.top < currentScrollY || bounds.bottom > currentScrollY + 0.75 * screenHeight) {
+      quranPageLayout.smoothScrollLayoutTo(bounds.top.toInt() - (0.15 * screenHeight).toInt())
+    }
   }
 
   override fun getToolBarPosition(page: Int, sura: Int, ayah: Int): SelectionIndicator {
