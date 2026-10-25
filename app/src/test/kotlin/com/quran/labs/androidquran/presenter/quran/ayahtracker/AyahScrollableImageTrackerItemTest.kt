@@ -6,7 +6,6 @@ import android.graphics.drawable.BitmapDrawable
 import android.view.View.MeasureSpec
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.google.common.truth.Truth.assertWithMessage
 import com.quran.data.core.QuranInfo
 import com.quran.data.model.highlight.HighlightType
 import com.quran.labs.androidquran.base.TestApplication
@@ -53,8 +52,9 @@ class AyahScrollableImageTrackerItemTest {
       MeasureSpec.makeMeasureSpec(SCREEN_HEIGHT, MeasureSpec.EXACTLY),
     )
     layout.layout(0, 0, 800, SCREEN_HEIGHT)
+    // the screen's height as when the app started in portrait, before the screen was turned
     item = AyahScrollableImageTrackerItem(
-      PAGE, SCREEN_HEIGHT, quranInfo, QuranDisplayData(quranInfo), layout, emptySet(), imageView
+      PAGE, PORTRAIT_SCREEN_HEIGHT, quranInfo, QuranDisplayData(quranInfo), layout, emptySet(), imageView
     )
     item.onSetAyahCoordinates(
       AyahCoordinates(
@@ -64,6 +64,7 @@ class AyahScrollableImageTrackerItemTest {
         wordCoordinates = mapOf(
           "2:6:1" to listOf(AyahBounds(1, 1, RectF(700f, 100f, 900f, 200f))),
           "2:6:2" to listOf(AyahBounds(8, 2, RectF(700f, 1500f, 900f, 1600f))),
+          "2:6:3" to listOf(AyahBounds(4, 3, RectF(700f, 600f, 900f, 700f))),
         ),
       )
     )
@@ -72,13 +73,16 @@ class AyahScrollableImageTrackerItemTest {
   @Test
   fun `scrolls to a word followed low on the page`() {
     item.onHighlightAyah(PAGE, 2, 6, 2, TYPE, true)
-    assertThat(layout.scrolledTo).hasSize(1)
-    // the word's line (image 1500..1600, shown at 0.8 scale) ends up near the top of the screen
-    val imageView = layout.getImageView()
-    val details = "scrolled to ${layout.scrolledTo}, view ${imageView.width}x${imageView.height}, " +
-      "matrix ${imageView.imageMatrix}, drawable ${imageView.drawable.bounds}, padding ${imageView.paddingTop}"
-    println("SCROLL TEST: $details")
-    assertWithMessage(details).that(layout.scrolledTo.single()).isIn(1100..1200)
+    // the word (image 1500..1600, shown at 0.769 scale below 20 px of padding, so 1173..1250 on
+    // the page) ends up near the top of the 400 px the page shows
+    assertThat(layout.scrolledTo).containsExactly(1113)
+  }
+
+  @Test
+  fun `scrolls to a word just below what the page shows`() {
+    // 481..558 on the page: below its 400 px, though within the portrait screen's height
+    item.onHighlightAyah(PAGE, 2, 6, 3, TYPE, true)
+    assertThat(layout.scrolledTo).containsExactly(421)
   }
 
   @Test
@@ -90,6 +94,7 @@ class AyahScrollableImageTrackerItemTest {
   private companion object {
     const val PAGE = 3
     const val SCREEN_HEIGHT = 400
+    const val PORTRAIT_SCREEN_HEIGHT = 1600
     val TYPE = HighlightType(44, android.R.color.transparent, HighlightType.Mode.HIGHLIGHT)
   }
 }

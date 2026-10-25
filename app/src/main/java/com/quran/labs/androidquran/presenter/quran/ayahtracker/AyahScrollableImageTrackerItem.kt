@@ -79,9 +79,13 @@ class AyahScrollableImageTrackerItem(
     val bounds = RectF(wordBounds.first().bounds)
     wordBounds.forEach { bounds.union(it.bounds) }
     ayahView.imageMatrix.mapRect(bounds)
+    bounds.offset(0f, ayahView.paddingTop.toFloat())
+    // the page's own height (what is visible of it), rather than the screen's, which may not be
+    // up to date after the screen was turned
+    val visibleHeight = quranPageLayout.height.takeIf { it > 0 } ?: screenHeight
     val currentScrollY = quranPageLayout.currentScrollY
-    if (bounds.top < currentScrollY || bounds.bottom > currentScrollY + 0.75 * screenHeight) {
-      quranPageLayout.smoothScrollLayoutTo(bounds.top.toInt() - (0.15 * screenHeight).toInt())
+    if (bounds.top < currentScrollY || bounds.bottom > currentScrollY + 0.75 * visibleHeight) {
+      quranPageLayout.smoothScrollLayoutTo(bounds.top.toInt() - (0.15 * visibleHeight).toInt())
     }
   }
 
