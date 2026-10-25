@@ -147,16 +147,6 @@
         reciting, the book button hides the words you have not recited yet, for reciting from
         memory. Press and hold the microphone to choose how strictly words are checked.
         &lt;br/>
-        &lt;br/>&lt;b>What do the colors mean while reciting?&lt;/b>
-        &lt;br/>Green: the word was recited. Red: the word was missed (not said, said wrong, or
-        part of an ayah you skipped). Cyan: the word was recited with a wrong vowel (fatha, damma
-        or kasra) on one of its letters. A pale box shows the word you are expected to recite next.
-        &lt;br/>
-        &lt;br/>&lt;b>Why does an ayah stay red and the page not move on?&lt;/b>
-        &lt;br/>Ayahs must be recited in order. If you skip an ayah or recite another passage in its
-        place, it turns red and the app waits for you there: the ayahs after it are not counted
-        until you go back and recite it.
-        &lt;br/>
         &lt;br/>&lt;b>Is my recitation sent anywhere?&lt;/b>
         &lt;br/>No. Your recitation is heard on your device only; the internet is needed just once,
         to download the recitation model.
