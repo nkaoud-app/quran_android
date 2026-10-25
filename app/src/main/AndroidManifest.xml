@@ -70,14 +70,6 @@
         android:theme="@style/QuranToolBarDayNight"
         android:exported="false"/>
     <activity
-        android:name=".ui.RecitationPracticeActivity"
-        android:theme="@style/QuranToolBarDayNight"
-        android:exported="false"/>
-    <activity
-        android:name=".ui.RecitationTrackingActivity"
-        android:theme="@style/QuranToolBarDayNight"
-        android:exported="false"/>
-    <activity
         android:name=".AboutUsActivity"
         android:theme="@style/QuranToolBarDayNight"
         android:exported="false"/>

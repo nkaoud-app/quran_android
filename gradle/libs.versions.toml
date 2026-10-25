@@ -26,7 +26,6 @@ quranMobileSyncVersion = "0.1.36"
 retrofitVersion = "3.0.0"
 rxandroidVersion = "3.0.2"
 rxjavaVersion = "3.1.12"
-onnxruntimeVersion = "1.27.0" # the version sherpa-onnx bundles, so they share libonnxruntime.so
 sqldelight = "2.4.1"
 timberVersion = "5.0.1"
 
@@ -135,7 +134,6 @@ okhttp-tls = { module = "com.squareup.okhttp3:okhttp-tls" }
 # rx
 rxandroid = { module = "io.reactivex.rxjava3:rxandroid", version.ref = "rxandroidVersion" }
 rxjava = { module = "io.reactivex.rxjava3:rxjava", version.ref = "rxjavaVersion" }
-onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeVersion" }
 
 # retrofit
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofitVersion" }

@@ -120,10 +120,11 @@ android {
       excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/INDEX.LIST")
     }
     jniLibs {
-      // onnxruntime-android and sherpa-onnx both bring ONNX Runtime 1.27, which either can use.
-      pickFirsts += setOf("**/libonnxruntime.so")
       // sherpa-onnx's native libraries for emulators only add about 60 MB.
-      excludes += setOf("lib/x86/libsherpa-onnx-*.so", "lib/x86_64/libsherpa-onnx-*.so")
+      excludes += setOf(
+        "lib/x86/libsherpa-onnx-*.so", "lib/x86_64/libsherpa-onnx-*.so",
+        "lib/x86/libonnxruntime.so", "lib/x86_64/libonnxruntime.so",
+      )
     }
   }
 }

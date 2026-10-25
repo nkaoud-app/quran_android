@@ -14,9 +14,8 @@ dependencies {
   implementation libs.kotlinx.coroutines.core
   implementation libs.kotlinx.coroutines.android
 
-  // on-device recitation acoustic model, downloaded on first use
+  // downloads the recitation model on first use
   implementation libs.okhttp
-  implementation libs.onnxruntime.android
 
   // testing
   testImplementation libs.junit

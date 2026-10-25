@@ -355,12 +355,6 @@ class QuranActivity : AppCompatActivity(),
       R.id.about -> {
         startActivity(Intent(this, AboutUsActivity::class.java))
       }
-      R.id.recitation_practice -> {
-        startActivity(Intent(this, RecitationPracticeActivity::class.java))
-      }
-      R.id.recitation_tracking -> {
-        startActivity(Intent(this, RecitationTrackingActivity::class.java))
-      }
       R.id.jump -> {
         gotoPageDialog()
       }

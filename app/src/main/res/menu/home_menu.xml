@@ -51,14 +51,6 @@
       app:actionViewClass="androidx.appcompat.widget.SearchView"
       app:showAsAction="ifRoom|collapseActionView" />
   <item
-      android:id="@+id/recitation_tracking"
-      android:title="@string/recitation_tracking"
-      app:showAsAction="never" />
-  <item
-      android:id="@+id/recitation_practice"
-      android:title="@string/recitation_practice"
-      app:showAsAction="never" />
-  <item
       android:id="@+id/jump"
       android:title="@string/menu_jump"
       app:showAsAction="never" />
