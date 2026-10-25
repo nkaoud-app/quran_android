@@ -311,11 +311,6 @@ class RecitationPresenterImpl @Inject constructor(
             recited -= event.word
             wrongVowels -= event.word
           }
-          is PhonemeFollower.Event.Repeat -> {
-            recited.removeAll { it >= event.word }
-            missed.removeAll { it >= event.word }
-            wrongVowels.removeAll { it >= event.word }
-          }
         }
       }
       progress.copy(

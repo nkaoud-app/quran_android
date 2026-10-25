@@ -44,14 +44,15 @@ data class FollowerConfig(
  * When the reader moves past a word, it is checked against what was heard while they were on it:
  * close enough and it is [Event.Recited] (noting any letter heard with another vowel than its own),
  * otherwise [Event.Missed]. Words passed in a jump ahead are missed, apart from the last few before
- * it, which the reader may already have said. Going back over words clears them so they are
- * checked again (the few just before where the reader went back too, against what was just heard).
+ * it, which the reader may already have said.
  *
- * Ayahs must be recited in order. A slip within an ayah is a missed word, but an ayah left with
- * more than half its words missed (skipped, or recited from somewhere else) is missed from its
- * first missed word on, and holds the reader there ([currentWord]): words after it are followed
- * but not marked until the reader comes back and recites it. So is an ayah the reader stays on
- * while saying more than is left of it without getting further (another passage altogether).
+ * Ayahs must be recited in order: words are marked from the one expected next ([currentWord]) on,
+ * as the reader passes it. A slip within an ayah is a missed word, but an ayah left with more than
+ * half its words missed (skipped, or recited from somewhere else) is missed from its first missed
+ * word on and expected again from there: words after it are followed but not marked until the
+ * reader comes back and recites it. So is the rest of an ayah the reader says more than is left of
+ * without making progress (another passage altogether). Going back to earlier words (repeating)
+ * clears nothing; one missed turns recited when said right.
  */
 class PhonemeFollower(
   private val words: List<String>,
@@ -71,9 +72,6 @@ class PhonemeFollower(
 
     /** The reader passed [word] without saying it right. */
     data class Missed(val word: Int) : Event()
-
-    /** The reader went back to [word]; words from it on are being recited again. */
-    data class Repeat(val word: Int) : Event()
   }
 
   // Where each word's ayah ends (the index after its last word), and its sounds: phonemes, a
@@ -122,26 +120,30 @@ class PhonemeFollower(
   private var heardOffset = 0
   private var heardCount = 0
   private var lastHeard = 0.toChar()
+  /** Sounds heard: phonemes, a phoneme lengthened (repeated) counting once. */
+  private var soundsHeard = 0
 
   // The recognizer's tokens already taken in.
   private var tokensTaken = 0
 
   /**
-   * Where the reader is expected: the word whose next phoneme is expected (-1 before they start),
-   * or the first missed word of an ayah they must come back to.
+   * The word expected next (-1 before the reader starts): the first not yet recited in order. It
+   * only goes forward as the reader recites it (and the words after it), or back to the first
+   * missed word of an ayah they skipped or recited from elsewhere, which they must come back to.
    */
-  val currentWord: Int get() = if (holdFrom >= 0) holdFrom else position
+  var currentWord = -1
+    private set
 
   /** Where the reader is: the word whose next phoneme is expected (-1 before they start). */
   private var position = -1
 
-  // The ayah the reader must come back to: from its first missed word to its end.
-  private var holdFrom = -1
-  private var holdUntil = -1
+  // Since the reader last made progress (recited a word, or went on to the next): sounds heard
+  // then, and whether the rest of the expected word's ayah was missed since.
+  private var progressAt = 0
+  private var stuck = false
 
-  // The words of an ayah marked in order since the reader came to it: where they started, the
-  // ayah's end, how many and how many missed, and the first missed.
-  private var passFrom = -1
+  // The words of an ayah marked in order: the ayah's end, how many and how many missed, and the
+  // first missed.
   private var passEnd = -1
   private var passWords = 0
   private var passMissed = 0
@@ -178,6 +180,7 @@ class PhonemeFollower(
 
   private fun hear(c: Char) {
     val insertion = if (c == lastHeard) config.repeatInsertionCost else config.insertionCost
+    if (c != lastHeard) soundsHeard++
     lastHeard = c
     heard.append(c)
     heardCount++
@@ -246,54 +249,71 @@ class PhonemeFollower(
     for (j in 1 until positions) if (cost[j] <= cost[best]) best = j // ties: further on
     if (noise < cost[best] || best < suraOffset) return // not started yet (or saying an opening)
     val word = wordAt(best)
-    // On starting, the words from the start word on were recited since the beginning.
-    val previous = if (position < 0) startWord.also { reachedAt[it] = heardOffset } else position
+    if (position < 0) {
+      // On starting, the words from the start word on were recited since the beginning.
+      position = startWord
+      currentWord = startWord
+      reachedAt[startWord] = heardOffset
+      progressAt = soundsHeard
+    }
+    val previous = position
     position = word
     when {
       word > previous -> advance(previous, word)
       word <= previous - config.minRepeat -> goBack(word)
       else -> reachedAt.putIfAbsent(word, heardCount)
     }
-    if (holdFrom < 0) holdIfStuck()
+    missIfStuck()
     trimHeard()
   }
 
-  /** The reader went on from [previous] to [word]: marks the words passed, in order. */
+  /**
+   * The reader went on from [previous] to [word]: marks the expected word and the ones after it
+   * that they passed, in order. Earlier words passed again (the reader repeating) can only turn
+   * recited; later ones are not marked until the reader recites the expected one.
+   */
   private fun advance(previous: Int, word: Int) {
     val jump = word - previous > config.maxMissedRun
     // After a jump ahead, the reader may already have said the last few words before it was clear;
     // only what was heard after the last word recited counts (which may sound like these).
     val since = lastRecitedAt
     for (w in previous until word) {
-      // words after an ayah the reader must come back to are not marked yet
-      if (holdFrom >= 0 && w >= holdUntil) break
+      if (w > currentWord) break
       val recited = when {
         !jump -> check(w, reachedAt[w])
         w >= word - JUMP_LOOKBACK -> check(w, since, margin = 0)
         else -> null
       }
-      if (recited != null) recited(recited) else missed(w)
       reachedAt.remove(w)
-      if (w + 1 == ayahEnds[w]) leftAyah()
+      if (w < currentWord) {
+        recited?.let(::recitedAgain)
+      } else {
+        if (recited != null) recited(recited) else missed(w)
+        moveOn(w + 1)
+        if (w + 1 == ayahEnds[w]) leftAyah()
+      }
     }
     if (jump) reachedAt.clear()
     reachedAt[word] = heardCount
   }
 
-  /** The reader went back to [word]. */
+  /** The reader went back to [word], to recite earlier words again. */
   private fun goBack(word: Int) {
-    // Nothing is marked after an ayah the reader must come back to, and its words stay missed
-    // until recited: going back into it or after it clears nothing.
-    val clears = holdFrom < 0 || word < holdFrom
-    if (clears) events += Event.Repeat(word)
-    passEnd = -1
     // The jump back is clear only some way into the repeat (repeated passages often start
     // alike): the last few words before it may already have been said again.
-    val recent = (maxOf(0, word - JUMP_LOOKBACK) until word).sumOf { words[it].length } * 2 + MARGIN
-    for (w in maxOf(0, word - JUMP_LOOKBACK) until word) {
-      check(w, heardCount - recent, margin = 0)?.let(::recited)
+    val from = maxOf(0, word - JUMP_LOOKBACK)
+    val recent = (from until word).sumOf { words[it].length } * 2 + MARGIN
+    for (w in from until minOf(word, currentWord)) {
+      check(w, heardCount - recent, margin = 0)?.let(::recitedAgain)
     }
-    if (clears && holdFrom >= 0) for (w in holdFrom until holdUntil) events += Event.Missed(w)
+    // Back into the expected word's ayah, a little after it: the words between are marked, in order.
+    if (currentWord in 0..word && word < ayahEnds[currentWord]) {
+      for (w in currentWord until word) {
+        val recited = if (w >= from) check(w, heardCount - recent, margin = 0) else null
+        if (recited != null) recited(recited) else missed(w)
+        moveOn(w + 1)
+      }
+    }
     reachedAt.clear()
     reachedAt[word] = heardCount
   }
@@ -304,6 +324,13 @@ class PhonemeFollower(
     counted(event.word, missed = false)
   }
 
+  /** An earlier word recited again: right this time, if it was missed. */
+  private fun recitedAgain(event: Event.Recited) {
+    events += event
+    lastRecitedAt = heardCount
+    progressAt = soundsHeard
+  }
+
   private fun missed(word: Int) {
     events += Event.Missed(word)
     counted(word, missed = true)
@@ -311,7 +338,6 @@ class PhonemeFollower(
 
   private fun counted(word: Int, missed: Boolean) {
     if (ayahEnds[word] != passEnd) {
-      passFrom = word
       passEnd = ayahEnds[word]
       passWords = 0
       passMissed = 0
@@ -324,38 +350,39 @@ class PhonemeFollower(
     }
   }
 
-  /** The reader passed the end of the ayah of the words last marked. */
+  private fun moveOn(word: Int) {
+    currentWord = word
+    progressAt = soundsHeard
+    stuck = false
+  }
+
+  /**
+   * The reader passed the end of the ayah of the words last marked: with more than half of them
+   * missed, it was skipped (or recited from elsewhere), and is expected again from its first
+   * missed word.
+   */
   private fun leftAyah() {
     if (passEnd < 0) return
-    val skipped = passMissed * 2 > passWords
-    when {
-      skipped -> hold(passFirstMissed, passEnd)
-      // the ayah the reader had to come back to, recited from where it was missed
-      holdFrom >= 0 && passEnd == holdUntil && passFrom <= holdFrom -> holdFrom = -1
+    if (passMissed * 2 > passWords) {
+      for (w in passFirstMissed until passEnd) events += Event.Missed(w)
+      moveOn(passFirstMissed)
     }
     passEnd = -1
   }
 
-  /** Holds the reader at [from] until they recite the rest of its ayah, up to [until]. */
-  private fun hold(from: Int, until: Int) {
-    holdFrom = if (holdFrom >= 0 && holdUntil == until) minOf(holdFrom, from) else from
-    holdUntil = until
-    for (w in holdFrom until holdUntil) events += Event.Missed(w)
-  }
-
   /**
-   * Holds the reader at the word they are on when they have said more than is left of its ayah
-   * (by [STUCK_RATIO], and [STUCK_MARGIN] sounds) without getting further: they are reciting
-   * something else.
+   * Misses the rest of the expected word's ayah when the reader has said more than is left of it
+   * (by [STUCK_RATIO], and [STUCK_MARGIN] sounds) without making progress: they are reciting
+   * something else. It is expected still.
    */
-  private fun holdIfStuck() {
-    val word = position
-    if (word < 0 || word >= words.size) return
-    val reached = reachedAt[word] ?: return
-    val from = maxOf(reached, heardOffset) - heardOffset
-    val said = sounds(heard, from)
+  private fun missIfStuck() {
+    val word = currentWord
+    if (stuck || word < 0 || word >= words.size) return
     val left = (word until ayahEnds[word]).sumOf { wordSounds[it] }
-    if (said > STUCK_RATIO * left + STUCK_MARGIN) hold(word, ayahEnds[word])
+    if (soundsHeard - progressAt > STUCK_RATIO * left + STUCK_MARGIN) {
+      for (w in word until ayahEnds[word]) events += Event.Missed(w)
+      stuck = true
+    }
   }
 
   /** The word whose next phoneme is expected at sura [position] (words.size after the last). */
@@ -502,12 +529,8 @@ class PhonemeFollower(
     const val STUCK_RATIO = 1.3
     const val STUCK_MARGIN = 8
 
-    /** Phonemes in [text] from [from], a phoneme repeated (lengthened) counting once. */
-    fun sounds(text: CharSequence, from: Int = 0): Int {
-      var count = 0
-      for (i in from until text.length) if (i == from || text[i] != text[i - 1]) count++
-      return count
-    }
+    /** Phonemes in [text], a phoneme repeated (lengthened) counting once. */
+    fun sounds(text: String): Int = text.indices.count { it == 0 || text[it] != text[it - 1] }
 
     fun isShortVowel(c: Char) = c == 'َ' || c == 'ُ' || c == 'ِ' // fatha, damma, kasra
 

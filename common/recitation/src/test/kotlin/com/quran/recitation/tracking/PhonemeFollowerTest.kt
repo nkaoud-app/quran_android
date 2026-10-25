@@ -23,7 +23,8 @@ class PhonemeFollowerTest {
     val missed = sortedSetOf<Int>()
     val everMissed = sortedSetOf<Int>()
     val wrongVowels = sortedSetOf<Int>()
-    val repeats = ArrayList<Int>()
+    /** The word expected next after each chunk of audio. */
+    val expected = ArrayList<Int>()
     /** The words recited, in the order they were marked. */
     val recitedOrder = ArrayList<Int>()
     var currentWord = -1
@@ -57,14 +58,9 @@ class PhonemeFollowerTest {
             replay.recited -= event.word
             replay.wrongVowels -= event.word
           }
-          is PhonemeFollower.Event.Repeat -> {
-            replay.repeats += event.word
-            replay.recited.removeAll { it >= event.word }
-            replay.missed.removeAll { it >= event.word }
-            replay.wrongVowels.removeAll { it >= event.word }
-          }
         }
       }
+      replay.expected += follower.currentWord
     }
     replay.currentWord = follower.currentWord
     return replay
@@ -86,7 +82,7 @@ class PhonemeFollowerTest {
     assertThat(replay.recited).containsExactlyElementsIn(ayahs1To10)
     assertThat(replay.missed).isEmpty()
     assertThat(replay.wrongVowels).isEmpty()
-    assertThat(replay.repeats).isEmpty()
+    assertThat(replay.expected).isInOrder()
     assertThat(replay.currentWord).isEqualTo(ayahs1To10.last() + 1)
   }
 
@@ -118,6 +114,22 @@ class PhonemeFollowerTest {
     assertRecitedInOrder(replay, 3, 4)
   }
 
+  /**
+   * Minshawi's al-Mulk 1-7, then Ya-Sin 1-5 instead of al-Mulk 8, then al-Mulk 8-9: the reader is
+   * held at al-Mulk 8 throughout, wherever in al-Mulk what they say sounds like.
+   */
+  @Test
+  fun `an ayah skipped for another sura holds the reader there until they come back`() {
+    val replay = replay("mulk-branch-off.txt")
+    val ayah8 = replay.ayahWords(8)
+    assertThat(replay.everMissed).containsAtLeastElementsIn(ayah8)
+    val reached = replay.expected.indexOfFirst { it >= ayah8.first() }
+    assertThat(replay.expected.drop(reached).minOrNull()).isEqualTo(ayah8.first())
+    assertThat(replay.recited).containsExactlyElementsIn((1..9).flatMap(replay::ayahWords))
+    assertThat(replay.missed).isEmpty()
+    assertRecitedInOrder(replay, 8, 9)
+  }
+
   /** No word of [later] was recited before the last of [earlier]. */
   private fun assertRecitedInOrder(replay: Replay, earlier: Int, later: Int) {
     val lastEarlier = replay.recitedOrder.indexOfLast { replay.ayahOf[it] == earlier }
@@ -128,8 +140,8 @@ class PhonemeFollowerTest {
   @Test
   fun `follows the reader back when they repeat an ayah`() {
     val replay = replay("mulk-repeat.txt")
-    assertThat(replay.repeats).hasSize(1)
-    assertThat(replay.ayahWords(2)).contains(replay.repeats.single())
+    // going back to recite an earlier ayah again does not take back the word expected next
+    assertThat(replay.expected).isInOrder()
     assertThat(replay.recited).containsExactlyElementsIn((1..10).flatMap(replay::ayahWords))
     assertThat(replay.missed).isEmpty()
   }
@@ -144,7 +156,7 @@ class PhonemeFollowerTest {
     val replaced = replay.ayahWords(2)[2] // ٱلۡمَوۡتَ
     assertThat(replay.recited).containsExactlyElementsIn((1..3).flatMap(replay::ayahWords))
     assertThat(replay.missed).isEmpty()
-    assertThat(replay.repeats).hasSize(1)
+    assertThat(replay.expected).isInOrder()
     assertThat(replay.everMissed).contains(replaced) // the first time
     assertThat(replay.recited).contains(replaced) // the second time
   }
