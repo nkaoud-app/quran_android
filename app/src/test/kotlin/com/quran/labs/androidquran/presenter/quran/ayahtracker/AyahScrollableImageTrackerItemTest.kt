@@ -75,10 +75,10 @@ class AyahScrollableImageTrackerItemTest {
     assertThat(layout.scrolledTo).hasSize(1)
     // the word's line (image 1500..1600, shown at 0.8 scale) ends up near the top of the screen
     val imageView = layout.getImageView()
-    assertWithMessage(
-      "view ${imageView.width}x${imageView.height}, matrix ${imageView.imageMatrix}, " +
-        "drawable ${imageView.drawable.bounds}, padding ${imageView.paddingTop}"
-    ).that(layout.scrolledTo.single()).isIn(1100..1200)
+    val details = "scrolled to ${layout.scrolledTo}, view ${imageView.width}x${imageView.height}, " +
+      "matrix ${imageView.imageMatrix}, drawable ${imageView.drawable.bounds}, padding ${imageView.paddingTop}"
+    println("SCROLL TEST: $details")
+    assertWithMessage(details).that(layout.scrolledTo.single()).isIn(1100..1200)
   }
 
   @Test
