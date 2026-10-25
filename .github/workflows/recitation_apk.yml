@@ -30,7 +30,7 @@ jobs:
         run: ./gradlew :common:recitation:testReleaseUnitTest
 
       - name: Run mushaf page tests
-        run: ./gradlew :app:testMadaniDebugUnitTest --tests '*AyahScrollableImageTrackerItemTest'
+        run: ./gradlew :app:testMadaniDebugUnitTest --tests '*AyahScrollableImageTrackerItemTest' -PdisableFirebase
 
       - name: Upload test report
         uses: actions/upload-artifact@v7

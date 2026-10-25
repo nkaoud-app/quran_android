@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.quran.data.core.QuranInfo
 import com.quran.data.model.highlight.HighlightType
+import com.quran.labs.androidquran.base.TestApplication
 import com.quran.labs.androidquran.data.QuranDisplayData
 import com.quran.labs.androidquran.pages.data.madani.MadaniDataSource
 import com.quran.labs.androidquran.view.QuranImagePageLayout
@@ -21,7 +22,7 @@ import org.robolectric.annotation.Config
 
 /** A landscape page (taller than the screen, so it scrolls) following a word recited on it. */
 @RunWith(RobolectricTestRunner::class)
-@Config(qualifiers = "w800dp-h400dp-land-mdpi")
+@Config(application = TestApplication::class, sdk = [33], qualifiers = "w800dp-h400dp-land-mdpi")
 class AyahScrollableImageTrackerItemTest {
 
   private class Layout : QuranImagePageLayout(ApplicationProvider.getApplicationContext()) {
