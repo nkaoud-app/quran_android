@@ -45,6 +45,9 @@ public class AyahInfoDatabaseHandler {
   private static final float MAX_MARK_WIDTH_RATIO = 0.019f;
   // Room around a pause mark's glyph, as a share of the text width.
   private static final float MARK_PADDING_RATIO = 0.004f;
+  // Room beyond the text's edges for the words starting and ending lines (strokes and vowel marks
+  // reaching past their glyphs), as a share of the text width; within the page's margins.
+  private static final float EDGE_PADDING_RATIO = 0.01f;
 
   private final SQLiteDatabase database;
   private final boolean hasGlyphData;
@@ -200,6 +203,7 @@ public class AyahInfoDatabaseHandler {
     try {
       final float maxMarkWidth = MAX_MARK_WIDTH_RATIO * getTextWidth();
       final float markPadding = MARK_PADDING_RATIO * getTextWidth();
+      final float edgePadding = EDGE_PADDING_RATIO * getTextWidth();
       // every glyph of the ayahs on this page, since words are counted from the start of the ayah
       cursor = database.rawQuery("SELECT g." + COL_PAGE + ", g." + COL_LINE + ", g." + COL_SURA +
           ", g." + COL_AYAH + ", g." + COL_POSITION + ", g." + MIN_X + ", g." + MIN_Y +
@@ -217,19 +221,25 @@ public class AyahInfoDatabaseHandler {
         rows.add(row);
       }
 
-      // Each line's height, so a word's box covers its marks and dots above and below.
+      // Each line's height, so a word's box covers its marks and dots above and below, and where
+      // it ends on the left; and the extent of the page's text.
       final Map<Integer, int[]> lines = new HashMap<>();
+      int textLeft = Integer.MAX_VALUE;
+      int textRight = Integer.MIN_VALUE;
       for (int[] row : rows) {
         if (row[0] != page) {
           continue;
         }
         final int[] line = lines.get(row[1]);
         if (line == null) {
-          lines.put(row[1], new int[] { row[6], row[8] });
+          lines.put(row[1], new int[] { row[6], row[8], row[5] });
         } else {
           line[0] = Math.min(line[0], row[6]);
           line[1] = Math.max(line[1], row[8]);
+          line[2] = Math.min(line[2], row[5]);
         }
+        textLeft = Math.min(textLeft, row[5]);
+        textRight = Math.max(textRight, row[7]);
       }
 
       // A word's box runs from its right edge to the next word on its line (the text is right to
@@ -272,6 +282,31 @@ public class AyahInfoDatabaseHandler {
         }
       }
 
+      // Nothing comes before the first word of a line (the text is right to left) to reach it, so
+      // its box runs to the right edge of the text, past what of its letters sticks out of its
+      // glyph (strokes, vowel marks); likewise a word ending its line runs to the left edge.
+      final Map<Integer, WordBox> lineStarts = new HashMap<>();
+      final Map<Integer, WordBox> lineEnds = new HashMap<>();
+      for (WordBox box : boxes) {
+        final WordBox start = lineStarts.get(box.line);
+        if (start == null || box.right > start.right) {
+          lineStarts.put(box.line, box);
+        }
+        final WordBox end = lineEnds.get(box.line);
+        if (end == null || box.left < end.left) {
+          lineEnds.put(box.line, box);
+        }
+      }
+      for (WordBox box : lineStarts.values()) {
+        box.right = Math.max(box.right, textRight + edgePadding);
+      }
+      for (WordBox box : lineEnds.values()) {
+        // only when no ayah number follows it on the line
+        if (box.left <= lines.get(box.line)[2]) {
+          box.left = Math.min(box.left, textLeft - edgePadding);
+        }
+      }
+
       for (WordBox box : boxes) {
         final int[] line = lines.get(box.line);
         List<AyahBounds> bounds = words.get(box.key);
@@ -296,7 +331,7 @@ public class AyahInfoDatabaseHandler {
     final int line;
     final int position;
     float left;
-    final float right;
+    float right;
 
     WordBox(String key, int line, int position, float left, float right) {
       this.key = key;
