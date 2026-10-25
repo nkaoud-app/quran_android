@@ -65,7 +65,7 @@
   <string name="about_tanzil_summary">Translations for a few languages, and the Quran text recitation tracking follows</string>
   <string name="about_tanzil_url" translatable="false">http://tanzil.net</string>
   <string name="about_recitation_model" translatable="false">Quran-Lab zipformer_p-arabic-v3</string>
-  <string name="about_recitation_model_summary">The model that hears your recitation for recitation tracking, under the Quran-Lab No-Profit License 1.2. Automatic feedback can be wrong and does not replace reciting to a qualified teacher.</string>
+  <string name="about_recitation_model_summary">The model that hears your recitation for recitation tracking, under the Quran-Lab No-Profit License 1.2. Automatic feedback can be wrong and does not replace reciting to a qualified shaykh.</string>
   <string name="about_recitation_model_url" translatable="false">https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3</string>
   <string name="about_quran_transcript" translatable="false">quran-transcript</string>
   <string name="about_quran_transcript_summary">The phonetic script of the Quran text recitation tracking follows (MIT license)</string>
@@ -153,7 +153,7 @@
         &lt;br/>
         &lt;br/>&lt;b>Can I rely on the recitation feedback?&lt;/b>
         &lt;br/>Automatic feedback can be wrong, and it does not replace reciting to a qualified
-        teacher. It does not judge tajweed rules such as the lengths of madd and ghunnah.
+        shaykh. It does not judge tajweed rules such as the lengths of madd and ghunnah.
     </string>
   <string name="search_hint">Search the Quran</string>
   <string name="quranSearchType">Verses of the Quran</string>
