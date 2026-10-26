@@ -62,13 +62,13 @@
   <string name="about_quran_enc_summary">Translations for many languages</string>
   <string name="about_quran_enc_url" translatable="false">https://quranenc.com</string>
   <string name="about_tanzil" translatable="false">Tanzil</string>
-  <string name="about_tanzil_summary">Translations for a few languages, and the Quran text recitation tracking follows</string>
+  <string name="about_tanzil_summary">Translations for a few languages, and the Quran text memorization review follows</string>
   <string name="about_tanzil_url" translatable="false">http://tanzil.net</string>
   <string name="about_recitation_model" translatable="false">Quran-Lab zipformer_p-arabic-v3</string>
-  <string name="about_recitation_model_summary">The model that hears your recitation for recitation tracking, under the Quran-Lab No-Profit License 1.2. Automatic tajweed feedback can be wrong and does not replace a qualified teacher.</string>
+  <string name="about_recitation_model_summary">The model that hears your recitation for memorization review, under the Quran-Lab No-Profit License 1.2. Automatic tajweed feedback can be wrong and does not replace a qualified teacher.</string>
   <string name="about_recitation_model_url" translatable="false">https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3</string>
   <string name="about_quran_transcript" translatable="false">quran-transcript</string>
-  <string name="about_quran_transcript_summary">The phonetic script of the Quran text recitation tracking follows (MIT license)</string>
+  <string name="about_quran_transcript_summary">The phonetic script of the Quran text memorization review follows (MIT license)</string>
   <string name="about_quran_transcript_url" translatable="false">https://github.com/obadx/quran-transcript</string>
   <string name="about_noorhidayat" translatable="false">Noorhidayat</string>
   <string name="about_noorhidayat_summary">Noorehira font and Mufti Taqi Translation</string>
@@ -139,7 +139,7 @@
         &lt;br/>Unfortunately, Android versions prior to 4.0 do not support these fonts, and there is
         little we can do to help with this.
         &lt;br/>
-        &lt;br/>&lt;b>How do I follow my recitation on the mushaf?&lt;/b>
+        &lt;br/>&lt;b>How do I review my memorization on the mushaf?&lt;/b>
         &lt;br/>Open any Arabic page, tap the screen once and tap the microphone at the bottom. The
         first time, the app downloads a recitation model (about 73 MB) and asks for permission to
         use the microphone. Recite from the first ayah of the page; to start from another ayah,

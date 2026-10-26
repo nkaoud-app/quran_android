@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <!-- following a recitation on the mushaf pages -->
-  <string name="recitation_microphone_needed">Microphone permission is needed to follow your recitation.</string>
+  <string name="recitation_microphone_needed">Microphone permission is needed for memorization review.</string>
   <string name="recitation_strictness_title">How strictly words are checked</string>
   <string name="recitation_strictness_easy">Easy</string>
   <string name="recitation_strictness_normal">Normal</string>
   <string name="recitation_strictness_strict">Strict</string>
-  <string name="recitation_model_title">Recitation tracking</string>
-  <string name="recitation_model_offer">Following your recitation needs a recitation model (%1$s), which runs on this device.\n\nDownload it now?</string>
+  <string name="recitation_model_title">Memorization review</string>
+  <string name="recitation_model_offer">Memorization review needs a recitation model (%1$s), which runs on this device.\n\nDownload it now?</string>
   <string name="recitation_model_download">Download</string>
   <string name="recitation_model_downloading">Downloading the recitation model</string>
   <string name="recitation_model_starting">Starting…</string>
@@ -16,6 +16,6 @@
   <string name="recitation_model_failed">Model download failed (%1$s). Check the connection and try again.</string>
   <string name="recitation_no_arabic">Arabic Quran data is not available. Download it from Quran data settings.</string>
   <string name="recitation_listening">Listening… recite from ayah %1$d.</string>
-  <string name="recitation_stopped">Recitation tracking stopped: %1$s</string>
+  <string name="recitation_stopped">Memorization review stopped: %1$s</string>
   <string name="recitation_sura_complete">Surah complete.</string>
 </resources>
