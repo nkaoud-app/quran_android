@@ -6,7 +6,7 @@
   <string name="recitation_strictness_normal">عادي</string>
   <string name="recitation_strictness_strict">صارم</string>
   <string name="recitation_model_title">متابعة التلاوة</string>
-  <string name="recitation_model_offer">تحتاج متابعة تلاوتك إلى ملفات للتعرّف على التلاوة (%1$s) تعمل على هذا الجهاز.\n\nقد يخطئ المدقق الآلي، ولا يغني عن القراءة على شيخ.\n\nهل تريد تنزيلها الآن؟</string>
+  <string name="recitation_model_offer">تحتاج متابعة تلاوتك إلى ملفات للتعرّف على التلاوة (%1$s) تعمل على هذا الجهاز.\n\nهل تريد تنزيلها الآن؟</string>
   <string name="recitation_model_download">تنزيل</string>
   <string name="recitation_model_downloading">جارٍ تنزيل ملفات التلاوة</string>
   <string name="recitation_model_starting">جارٍ البدء…</string>

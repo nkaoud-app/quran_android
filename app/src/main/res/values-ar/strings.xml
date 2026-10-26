@@ -50,9 +50,6 @@
         &lt;br/&gt;
         &lt;br/&gt;&lt;b&gt;هل تُرسَل تلاوتي إلى أي مكان؟&lt;/b&gt;
         &lt;br/&gt;لا. يستمع التطبيق إلى تلاوتك على جهازك فقط، ولا يحتاج إلى الإنترنت إلا مرة واحدة لتنزيل ملفات التلاوة.
-        &lt;br/&gt;
-        &lt;br/&gt;&lt;b&gt;هل يمكنني الاعتماد على ملاحظات التلاوة؟&lt;/b&gt;
-        &lt;br/&gt;قد يخطئ المدقق الآلي، ولا يغني عن القراءة على شيخ. ولا يحكم على أحكام التجويد مثل مقادير المدّ والغنّة.
     </string>
 
   <string name="search_hint">بحث في القرآن</string>
@@ -323,7 +320,7 @@
   <string name="about_quran_enc_summary">الترجمات لعدد من اللغات</string>
   <string name="about_tanzil" translatable="false">تنزيل</string>
   <string name="about_tanzil_summary">ترجمات لبعض اللغات، والنص القرآني الذي تعتمد عليه متابعة التلاوة</string>
-  <string name="about_recitation_model_summary">النموذج الذي يستمع إلى تلاوتك لمتابعة التلاوة، وفق رخصة Quran-Lab لغير الربحيين 1.2. قد يخطئ المدقق الآلي، ولا يغني عن القراءة على شيخ.</string>
+  <string name="about_recitation_model_summary">النموذج الذي يستمع إلى تلاوتك لمتابعة التلاوة، وفق رخصة Quran-Lab لغير الربحيين 1.2. ملاحظات التجويد الآلية قد تكون خاطئة، ولا تغني عن معلّم مؤهَّل.</string>
   <string name="about_quran_transcript_summary">الكتابة الصوتية للنص القرآني التي تعتمد عليها متابعة التلاوة (رخصة MIT)</string>
   <string name="please_wait">الرجاء الانتظار…</string>
   <string name="exported_data">صدرت البيانات إلى %1$s</string>

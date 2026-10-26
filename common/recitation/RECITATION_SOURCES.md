@@ -10,8 +10,8 @@ project's own code. It uses:
   (NPL-1.2). It is downloaded at runtime, not part of the app. Its terms include never charging
   for the model, access to it or any feature it powers; not presenting its output as an
   authoritative religious ruling on anyone's recitation; and stating in any application built on
-  it that automatic feedback can be wrong and does not replace a qualified teacher (the model
-  download dialog says so). `src/main/assets/recitation/tokens.txt` is the model's list of
+  it that automatic tajweed feedback can be wrong and does not replace a qualified teacher (the
+  About screen's credit for the model says so, in those words). `src/main/assets/recitation/tokens.txt` is the model's list of
   phoneme units.
 - **Model runtime**: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0), downloaded
   by `app/build.gradle.kts`.

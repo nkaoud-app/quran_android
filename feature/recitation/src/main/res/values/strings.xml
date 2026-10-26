@@ -7,7 +7,7 @@
   <string name="recitation_strictness_normal">Normal</string>
   <string name="recitation_strictness_strict">Strict</string>
   <string name="recitation_model_title">Recitation tracking</string>
-  <string name="recitation_model_offer">Following your recitation needs a recitation model (%1$s), which runs on this device.\n\nAutomatic feedback can be wrong and does not replace reciting to a qualified shaykh.\n\nDownload it now?</string>
+  <string name="recitation_model_offer">Following your recitation needs a recitation model (%1$s), which runs on this device.\n\nDownload it now?</string>
   <string name="recitation_model_download">Download</string>
   <string name="recitation_model_downloading">Downloading the recitation model</string>
   <string name="recitation_model_starting">Starting…</string>
