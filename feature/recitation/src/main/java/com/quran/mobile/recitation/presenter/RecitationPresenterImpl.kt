@@ -170,7 +170,13 @@ class RecitationPresenterImpl @Inject constructor(
   private fun offerDownload(activity: Activity, ayah: SuraAyah) {
     dialog = AlertDialog.Builder(activity)
       .setTitle(R.string.recitation_model_title)
-      .setMessage(activity.getString(R.string.recitation_model_offer, ZipformerModel.DOWNLOAD_SIZE))
+      .setMessage(
+        activity.getString(
+          R.string.recitation_model_offer,
+          // in the app's language's digits, like the download's progress
+          activity.getString(R.string.recitation_model_megabytes, ZipformerModel.DOWNLOAD_MEGABYTES),
+        )
+      )
       .setPositiveButton(R.string.recitation_model_download) { _, _ -> download(activity, ayah) }
       .setNegativeButton(R.string.recitation_cancel, null)
       .show()

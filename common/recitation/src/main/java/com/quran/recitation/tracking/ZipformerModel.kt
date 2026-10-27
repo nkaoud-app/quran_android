@@ -25,7 +25,8 @@ object ZipformerModel {
   private const val SHA256 = "31755836528da336a6192121cd7bc82cb41752dddb65566fd000b89c8686da6b"
   private const val MIN_SIZE = 10L * 1024 * 1024
 
-  const val DOWNLOAD_SIZE = "73 MB"
+  /** The download's size, in (rounded) megabytes. */
+  const val DOWNLOAD_MEGABYTES = 73
 
   private fun directory(context: Context) = File(context.filesDir, "recitation")
 
