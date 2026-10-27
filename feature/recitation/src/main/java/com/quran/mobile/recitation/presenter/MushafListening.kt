@@ -33,7 +33,7 @@ class MushafListening @Inject constructor(
   private val scope = MainScope()
   private var job: Job? = null
 
-  val isListening: Boolean get() = job != null
+  val isListening: Boolean get() = job?.isActive == true
 
   /** Called whenever listening stops, whether asked to or by itself (sura complete, an error). */
   var onStopped: (() -> Unit)? = null

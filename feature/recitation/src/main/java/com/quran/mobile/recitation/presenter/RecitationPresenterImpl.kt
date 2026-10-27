@@ -86,8 +86,11 @@ class RecitationPresenterImpl @Inject constructor(
     state.restoreHideUnrecited(
       what.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getBoolean(KEY_HIDE, false)
     )
-    // Still listening from before the screen was rebuilt.
-    if (listening.isListening) what.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    // Still listening from before the screen was rebuilt: say so again for the new screen.
+    if (listening.isListening) {
+      what.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+      eventPresenter.onListeningStateChange(true)
+    }
     listening.onStopped = onStopped
   }
 

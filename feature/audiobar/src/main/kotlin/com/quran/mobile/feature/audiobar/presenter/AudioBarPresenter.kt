@@ -25,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -51,17 +50,15 @@ class AudioBarPresenter @Inject constructor(
       .onEach { internalAudioBarFlow.value = it }
       .launchIn(scope)
 
-    combine(
+    val playbackState = combine(
       audioStatusRepository.audioPlaybackFlow,
       currentQariManager.flow(),
       recitationPresenter.isRecitationEnabledFlow(),
     ) { audioStatus, qari, isRecitationEnabled ->
       transformAudioBarState(audioStatus, isRecitationEnabled, qari)
     }
-      .onEach { internalAudioBarFlow.value = it }
-      .launchIn(scope)
 
-    combine(
+    val recitationState = combine(
       recitationPresenter.isRecitationEnabledFlow(),
       recitationEventPresenter.recitationSessionFlow,
       recitationEventPresenter.listeningStateFlow,
@@ -73,7 +70,13 @@ class AudioBarPresenter @Inject constructor(
         null
       }
     }
-      .filterNotNull()
+
+    // While a recitation session is open its bar shows, unless audio is playing (or paused, or
+    // loading), whichever of the two changed last: when the screen is rebuilt, both arrive anew in
+    // no particular order.
+    combine(playbackState, recitationState) { playback, recitation ->
+      if (recitation != null && playback is AudioBarState.Stopped) recitation else playback
+    }
       .onEach { internalAudioBarFlow.value = it }
       .launchIn(scope)
   }
