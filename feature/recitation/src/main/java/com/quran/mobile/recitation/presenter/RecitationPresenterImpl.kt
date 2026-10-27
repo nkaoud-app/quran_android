@@ -1,7 +1,6 @@
 package com.quran.mobile.recitation.presenter
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Application
@@ -22,9 +21,7 @@ import com.quran.recitation.common.RecitedAyah
 import com.quran.recitation.events.RecitationEventPresenter
 import com.quran.recitation.presenter.RecitationPresenter
 import com.quran.recitation.tracking.FollowerConfig
-import com.quran.recitation.tracking.LivePhonemeRecitation
 import com.quran.recitation.tracking.PhonemeFollower
-import com.quran.recitation.tracking.PhonemeRecognizerFactory
 import com.quran.recitation.tracking.RecitationPhonemes
 import com.quran.recitation.tracking.RecitationText
 import com.quran.recitation.tracking.ZipformerModel
@@ -54,21 +51,24 @@ class RecitationPresenterImpl @Inject constructor(
   private val recitationText: RecitationText,
   private val eventPresenter: RecitationEventPresenter,
   private val state: MushafRecitationState,
-  private val recognizerFactory: PhonemeRecognizerFactory,
+  private val listening: MushafListening,
 ) : RecitationPresenter {
   private val enabled = MutableStateFlow(true)
   private var activity: Activity? = null
   private var scope: CoroutineScope? = null
-  private var listening: Job? = null
   private var preparing: Job? = null
   private var downloading: Job? = null
   private var pendingStart: SuraAyah? = null
   private var dialog: AlertDialog? = null
+  private val onStopped: () -> Unit = { onListeningStopped() }
 
   private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
-    // The microphone is only heard while the app is in the foreground.
+    // The microphone is only heard while the app is in the foreground (and carries on while the
+    // screen is rebuilt, turned between portrait and landscape).
     override fun onActivityStopped(activity: Activity) {
-      if (activity === this@RecitationPresenterImpl.activity) stopListening()
+      if (activity === this@RecitationPresenterImpl.activity && !activity.isChangingConfigurations) {
+        stopListening()
+      }
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
@@ -83,11 +83,18 @@ class RecitationPresenterImpl @Inject constructor(
     activity = what
     scope = MainScope()
     what.application.registerActivityLifecycleCallbacks(lifecycleCallbacks)
+    state.restoreHideUnrecited(
+      what.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getBoolean(KEY_HIDE, false)
+    )
+    // Still listening from before the screen was rebuilt.
+    if (listening.isListening) what.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    listening.onStopped = onStopped
   }
 
   override fun unbind(what: Activity) {
     if (activity !== what) return
-    stopListening()
+    if (!what.isChangingConfigurations) stopListening()
+    if (listening.onStopped === onStopped) listening.onStopped = null
     dialog?.dismiss()
     dialog = null
     what.application.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
@@ -106,7 +113,7 @@ class RecitationPresenterImpl @Inject constructor(
       chooseStrictness(activity)
       return
     }
-    if (listening != null) {
+    if (listening.isListening) {
       stopListening()
       return
     }
@@ -235,7 +242,7 @@ class RecitationPresenterImpl @Inject constructor(
       val openings = RecitationPhonemes.openings(activity, from.sura)
       preparing = null
       listen(
-        activity, scope, progress.words.map { it.phonemes }, progress.words.map { it.word.ayah.ayah },
+        activity, progress.words.map { it.phonemes }, progress.words.map { it.word.ayah.ayah },
         startWord, openings, from,
       )
     }
@@ -264,10 +271,8 @@ class RecitationPresenterImpl @Inject constructor(
     return state.progress.value
   }
 
-  @SuppressLint("MissingPermission") // checked in startOrStopRecitation
   private fun listen(
     activity: Activity,
-    scope: CoroutineScope,
     phonemes: List<String>,
     ayahs: List<Int>,
     startWord: Int,
@@ -275,76 +280,24 @@ class RecitationPresenterImpl @Inject constructor(
     from: SuraAyah,
   ) {
     activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    eventPresenter.onListeningStateChange(true)
-    eventPresenter.onRecitationChange(from)
-    var shownAyah = from
-    listening = scope.launch {
-      try {
-        val recitation = LivePhonemeRecitation(
-          recognizerFactory, ZipformerModel.file(activity), ZipformerModel.tokens(activity),
-          phonemes, ayahs, startWord, openings, FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
-        )
-        recitation.run(
-          onListening = { toast(activity, activity.getString(R.string.recitation_listening, from.ayah)) },
-          onUpdate = { update -> applyUpdate(activity, update, shownAyah)?.let { shownAyah = it } },
-        )
-      } catch (e: Exception) {
-        if (e !is CancellationException) {
-          toast(activity, activity.getString(R.string.recitation_stopped, e.message))
-          stopListening()
-        }
-      }
-    }
-  }
-
-  /** Applies [update]; returns the ayah the pages were turned to, if they were. */
-  private fun applyUpdate(activity: Activity, update: LivePhonemeRecitation.Update, shownAyah: SuraAyah): SuraAyah? {
-    state.update { progress ->
-      val recited = progress.recited.toHashSet()
-      val missed = progress.missed.toHashSet()
-      val wrongVowels = progress.wrongVowels.toHashSet()
-      for (event in update.events) {
-        when (event) {
-          is PhonemeFollower.Event.Recited -> {
-            recited += event.word
-            missed -= event.word
-            if (event.wrongVowels) wrongVowels += event.word else wrongVowels -= event.word
-          }
-          is PhonemeFollower.Event.Missed -> {
-            missed += event.word
-            recited -= event.word
-            wrongVowels -= event.word
-          }
-        }
-      }
-      progress.copy(
-        currentWord = if (update.currentWord >= 0) update.currentWord else progress.currentWord,
-        recited = recited,
-        missed = missed,
-        wrongVowels = wrongVowels,
-      )
-    }
-    val progress = state.progress.value ?: return null
-    if (progress.currentWord >= progress.words.size) {
-      toast(activity, activity.getString(R.string.recitation_sura_complete))
-      stopListening()
-    }
-    // Turn the page once the reader moves on to an ayah on the next one.
-    val ayah = progress.currentAyah
-    if (ayah != null && ayah != shownAyah) {
-      eventPresenter.onRecitationChange(ayah)
-      return ayah
-    }
-    return null
+    listening.start(
+      activity, phonemes, ayahs, startWord, openings, from,
+      FollowerConfig(maxWordCost = strictness(activity).maxWordCost),
+    )
   }
 
   private fun stopListening() {
     preparing?.cancel()
     preparing = null
-    listening?.cancel()
-    listening = null
-    activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    eventPresenter.onListeningStateChange(false)
+    listening.stop()
+  }
+
+  private fun onListeningStopped() {
+    val activity = activity ?: return
+    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    // Whether unrecited words are hidden, for the next time.
+    activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+      .putBoolean(KEY_HIDE, state.hidesUnrecited).apply()
   }
 
   private fun toast(context: Context, message: String) {
@@ -378,5 +331,6 @@ class RecitationPresenterImpl @Inject constructor(
     const val REQUEST_AUDIO = 4201
     const val PREFERENCES = "recitation_mushaf"
     const val KEY_STRICTNESS = "strictness"
+    const val KEY_HIDE = "hide_unrecited"
   }
 }

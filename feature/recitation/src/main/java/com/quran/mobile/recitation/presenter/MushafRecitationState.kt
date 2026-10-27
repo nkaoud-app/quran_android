@@ -28,7 +28,7 @@ data class MushafRecitationProgress(
   val missed: Set<Int> = emptySet(),
   /** Recited words with a letter said with the wrong vowel (harakah). */
   val wrongVowels: Set<Int> = emptySet(),
-  /** Whether words not yet recited are hidden (reciting from memory). */
+  /** Whether words not yet recited are hidden (reciting from memory, while the reader is heard). */
   val hideUnrecited: Boolean = false,
 ) {
   /** The ayah of the word the reader is on (the last ayah once all are recited). */
@@ -45,20 +45,35 @@ class MushafRecitationState @Inject constructor() {
   private val _progress = MutableStateFlow<MushafRecitationProgress?>(null)
   val progress: StateFlow<MushafRecitationProgress?> = _progress.asStateFlow()
 
-  /** Keeps whether unrecited words are hidden from one session to the next. */
-  private var hideUnrecited = false
+  /**
+   * Whether unrecited words are hidden while the reader is heard (reciting from memory), kept from
+   * one time to the next; they are shown whenever the microphone is off.
+   */
+  var hidesUnrecited = false
+    private set
+  private var listening = false
 
   fun start(progress: MushafRecitationProgress) {
-    _progress.value = progress.copy(hideUnrecited = hideUnrecited)
+    _progress.value = progress.copy(hideUnrecited = listening && hidesUnrecited)
   }
 
   fun update(transform: (MushafRecitationProgress) -> MushafRecitationProgress) {
     _progress.value = _progress.value?.let(transform)
   }
 
+  fun setListening(listening: Boolean) {
+    this.listening = listening
+    update { it.copy(hideUnrecited = listening && hidesUnrecited) }
+  }
+
+  /** The choice saved from before (it is only taken while not listening). */
+  fun restoreHideUnrecited(hide: Boolean) {
+    if (!listening) hidesUnrecited = hide
+  }
+
   fun toggleHideUnrecited() {
-    hideUnrecited = !hideUnrecited
-    update { it.copy(hideUnrecited = hideUnrecited) }
+    hidesUnrecited = !hidesUnrecited
+    update { it.copy(hideUnrecited = listening && hidesUnrecited) }
   }
 
   fun clear() {
