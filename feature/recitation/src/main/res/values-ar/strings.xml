@@ -8,6 +8,7 @@
   <string name="recitation_model_title">مراجعة الحفظ</string>
   <string name="recitation_model_offer">تحتاج مراجعة الحفظ إلى ملفات للتعرّف على التلاوة (%1$s) تعمل على هذا الجهاز.\n\nهل تريد تنزيلها الآن؟</string>
   <string name="recitation_model_download">تنزيل</string>
+  <string name="recitation_cancel">إلغاء</string>
   <string name="recitation_model_downloading">جارٍ تنزيل ملفات التلاوة</string>
   <string name="recitation_model_starting">جارٍ البدء…</string>
   <string name="recitation_model_percent">%1$d%%</string>

@@ -9,6 +9,7 @@
   <string name="recitation_model_title">Memorization review</string>
   <string name="recitation_model_offer">Memorization review needs a recitation model (%1$s), which runs on this device.\n\nDownload it now?</string>
   <string name="recitation_model_download">Download</string>
+  <string name="recitation_cancel">Cancel</string>
   <string name="recitation_model_downloading">Downloading the recitation model</string>
   <string name="recitation_model_starting">Starting…</string>
   <string name="recitation_model_percent">%1$d%%</string>

@@ -158,7 +158,7 @@ class RecitationPresenterImpl @Inject constructor(
         preferences.edit().putString(KEY_STRICTNESS, Strictness.entries[which].name).apply()
         chosen.dismiss()
       }
-      .setNegativeButton(android.R.string.cancel, null)
+      .setNegativeButton(R.string.recitation_cancel, null)
       .show()
   }
 
@@ -172,7 +172,7 @@ class RecitationPresenterImpl @Inject constructor(
       .setTitle(R.string.recitation_model_title)
       .setMessage(activity.getString(R.string.recitation_model_offer, ZipformerModel.DOWNLOAD_SIZE))
       .setPositiveButton(R.string.recitation_model_download) { _, _ -> download(activity, ayah) }
-      .setNegativeButton(android.R.string.cancel, null)
+      .setNegativeButton(R.string.recitation_cancel, null)
       .show()
   }
 
@@ -182,7 +182,7 @@ class RecitationPresenterImpl @Inject constructor(
       .setTitle(R.string.recitation_model_downloading)
       .setMessage(activity.getString(R.string.recitation_model_starting))
       .setCancelable(false)
-      .setNegativeButton(android.R.string.cancel) { _, _ ->
+      .setNegativeButton(R.string.recitation_cancel) { _, _ ->
         downloading?.cancel()
         downloading = null
       }
