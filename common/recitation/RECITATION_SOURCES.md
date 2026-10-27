@@ -7,9 +7,10 @@ project's own code. It uses:
 - **Recognition model**: Quran-Lab's
   [zipformer_p-arabic-v3](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3), a streaming
   phoneme recognizer for Quran recitation, released under the Quran-Lab No-Profit License 1.2
-  (NPL-1.2). It is downloaded at runtime, not part of the app; the copy downloaded is the
-  Hugging Face file (SHA256 `6a5ddafa9c5e5c01260d30264031b341785bdc152e9ef1d569b41c8c278508eb`,
-  72,705,392 bytes). The license forbids charging for the model, access to it or any feature it
+  (NPL-1.2), in its version 3.1 (`zipformer_p_arabic_v3.1.int8.onnx`). It is downloaded at
+  runtime from this fork's `zipformer-v3.1` release (a copy of the Hugging Face file, with the
+  license), not part of the app, and used only if its SHA256 is the Hugging Face file's
+  (`31755836528da336a6192121cd7bc82cb41752dddb65566fd000b89c8686da6b`, 72,705,392 bytes). The license forbids charging for the model, access to it or any feature it
   powers (advertising on such a feature included), and asks that copies of it and of anything
   derived from it keep its license file, under the same license. Access to the model was granted
   on also stating, in any application built on it, that automatic tajweed feedback can be wrong

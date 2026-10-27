@@ -32,7 +32,7 @@ data class FollowerConfig(
 
 /**
  * Follows a reader through a sura word by word from the phonemes a streaming recognizer hears
- * (Quran-Lab's zipformer_p-arabic-v3 run by sherpa-onnx; the phonemes of quran-transcript).
+ * (Quran-Lab's zipformer_p-arabic-v3, version 3.1, run by sherpa-onnx; the phonemes of quran-transcript).
  *
  * Every phoneme heard updates an edit-distance alignment of everything heard so far against the
  * sura's phonemes: one cost per position in the sura (the phonemes recited up to there). The

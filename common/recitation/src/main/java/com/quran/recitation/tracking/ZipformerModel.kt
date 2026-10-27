@@ -8,19 +8,21 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.security.MessageDigest
 
 /**
- * Quran-Lab's zipformer_p-arabic-v3 (https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3), a
- * streaming phoneme recognizer for Quran recitation, under the Quran-Lab No-Profit License 1.2:
- * downloaded on first use; its phoneme units ship in the app's assets.
+ * Quran-Lab's zipformer_p-arabic-v3 (https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3), in
+ * its version 3.1, a streaming phoneme recognizer for Quran recitation, under the Quran-Lab
+ * No-Profit License 1.2: downloaded on first use; its phoneme units ship in the app's assets.
  */
 object ZipformerModel {
-  private const val NAME = "zipformer_p_arabic_v3.int8.onnx"
+  private const val NAME = "zipformer_p_arabic_v3.1.int8.onnx"
+  // A copy of the Hugging Face file, with its license, on this fork's releases.
   private val URLS = listOf(
-    // A copy on this fork's releases, then the copy Natlu (a recitation app using it) downloads.
-    "https://github.com/nkaoud-app/quran_android/releases/download/zipformer-v3/$NAME",
-    "https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/$NAME",
+    "https://github.com/nkaoud-app/quran_android/releases/download/zipformer-v3.1/$NAME",
   )
+  /** The Hugging Face file's: a download that differs is not used. */
+  private const val SHA256 = "31755836528da336a6192121cd7bc82cb41752dddb65566fd000b89c8686da6b"
   private const val MIN_SIZE = 10L * 1024 * 1024
 
   const val DOWNLOAD_SIZE = "73 MB"
@@ -56,6 +58,7 @@ object ZipformerModel {
       var failure: Exception? = null
       for (url in URLS) {
         try {
+          val digest = MessageDigest.getInstance("SHA-256")
           client.newCall(Request.Builder().url(url).build()).execute().use { response ->
             check(response.isSuccessful) { "HTTP ${response.code}" }
             val body = response.body
@@ -70,6 +73,7 @@ object ZipformerModel {
                   val read = input.read(buffer)
                   if (read < 0) break
                   output.write(buffer, 0, read)
+                  digest.update(buffer, 0, read)
                   done += read
                   val percent = if (total > 0) done * 100 / total else -1
                   if (percent != lastShown || total <= 0) {
@@ -81,13 +85,19 @@ object ZipformerModel {
             }
           }
           check(partial.length() > MIN_SIZE) { "incomplete download" }
+          val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+          check(sha256 == SHA256) { "the download is not the model" }
           check(partial.renameTo(modelFile)) { "Could not save the model" }
+          // Earlier versions of the model are not used any more.
+          directory(context).listFiles { f -> f.name.endsWith(".onnx") && f != modelFile }
+            ?.forEach { it.delete() }
           return@withContext
         } catch (e: Exception) {
           if (e is CancellationException) throw e
           failure = e
         }
       }
+      partial.delete()
       throw failure ?: IllegalStateException("no download address")
     }
 }

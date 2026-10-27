@@ -4,7 +4,7 @@
   python export_fixture.py SPIKE_DIR MODEL_DIR OUT.txt --sura 67 --order 1 2 4 3 4 5 20:115
 
 SPIKE_DIR is tools/recitation-spike, for Minshawi's recitation and its word timings. MODEL_DIR
-holds Quran-Lab's zipformer_p_arabic_v3.int8.onnx and its tokens.txt, run with sherpa-onnx as the
+holds Quran-Lab's zipformer_p_arabic_v3.1.int8.onnx (or another version) and its tokens.txt, run with sherpa-onnx as the
 app runs it (480 ms chunks after 480 ms of silence). --drop leaves an ayah out, --repeat recites
 it twice; --order recites the ayahs given, in that order (SURA:AYAH for another sura's).
 
@@ -12,6 +12,7 @@ Each output line is the recognizer's tokens after one chunk: how many of the pre
 tokens it keeps, then its other tokens (space separated). The first line is "sura first_ayah".
 """
 import argparse
+import glob
 import sys
 import numpy as np
 import sherpa_onnx
@@ -66,7 +67,7 @@ def main():
 
   d = args.model_dir
   rec = sherpa_onnx.OnlineRecognizer.from_zipformer2_ctc(
-    tokens=f"{d}/tokens.txt", model=f"{d}/zipformer_p_arabic_v3.int8.onnx", num_threads=2,
+    tokens=f"{d}/tokens.txt", model=glob.glob(f"{d}/zipformer_p_arabic_v3*.int8.onnx")[0], num_threads=2,
     sample_rate=SAMPLE_RATE, feature_dim=80, enable_endpoint_detection=False)
   stream = rec.create_stream()
   stream.accept_waveform(SAMPLE_RATE, np.zeros(CHUNK, np.float32))

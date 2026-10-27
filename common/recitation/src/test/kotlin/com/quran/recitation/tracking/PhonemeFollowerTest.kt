@@ -163,7 +163,8 @@ class PhonemeFollowerTest {
 
   /**
    * Minshawi's al-Mulk 1-3, edited: ayah 2 with its third word replaced by another word's audio,
-   * then ayah 2 again correctly, then ayah 3.
+   * then ayah 2 again correctly, then ayah 3 (as version 3.0 of the model heard it; the other
+   * recordings are version 3.1's).
    */
   @Test
   fun `a word said wrong is missed, and recited once said again`() {
