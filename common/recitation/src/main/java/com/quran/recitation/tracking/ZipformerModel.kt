@@ -17,8 +17,10 @@ import java.security.MessageDigest
  */
 object ZipformerModel {
   private const val NAME = "zipformer_p_arabic_v3.1.int8.onnx"
-  // A copy of the Hugging Face file, with its license, on this fork's releases.
+  // A copy of the Hugging Face file, with its license, on this fork's releases; then the
+  // fork's earlier home, until it is retired.
   private val URLS = listOf(
+    "https://github.com/quran-recitation/quran_android/releases/download/zipformer-v3.1/$NAME",
     "https://github.com/nkaoud-app/quran_android/releases/download/zipformer-v3.1/$NAME",
   )
   /** The Hugging Face file's: a download that differs is not used. */
